@@ -1,0 +1,17 @@
+cordova:
+  socket_path: "/artifact/cordova.socks"
+
+  usb:
+    primary_label:  "CORDOVA-KEYS"
+    backup_label:   "CORDOVA-BACKUP"
+    mount_base:     "/artifact"
+    vault_filename: "cordova.vault"
+
+  audit:
+    log_path:    "artifact/audit.log"
+    max_size_mb: 100
+
+  kdf:
+    argon2id_time:    1
+    argon2id_memory:  65536   # 64 MB — tune for ~1-2s unseal on target hardware
+    argon2id_threads: 2

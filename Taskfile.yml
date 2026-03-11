@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+vars:
+  VAULT_BIN:  cordova-vault
+  ADMIN_BIN:  cordova-admin
+  BUILD_DIR:  build
+  PI_HOST:    cordova.rootbutcher.dev
+  PI_DEST:    ~/go/cordova-pi
+
+tasks:
+
+  # ─── Local ────────────────────────────────────────────────────────────────
+
+  build:
+    desc: Build cordova-vault daemon for local macOS
+    cmds:
+      - go build -o {{.BUILD_DIR}}/{{.VAULT_BIN}} ./core/cmd/cordova-vault/
+    sources:
+      - ./**/*.go
+    generates:
+      - "{{.BUILD_DIR}}/{{.VAULT_BIN}}"
+
+  build:admin:
+    desc: Build cordova-admin client for local macOS
+    cmds:
+      - go build -o {{.BUILD_DIR}}/{{.ADMIN_BIN}} ./admin/cmd/cordova-admin/
+    sources:
+      - ./**/*.go
+    generates:
+      - "{{.BUILD_DIR}}/{{.ADMIN_BIN}}"
+
+  build:all:
+    desc: Build both binaries for local macOS
+    deps: [build, build:admin]
+
+  run:
+    desc: Run cordova-vault daemon locally
+    cmds:
+      - go run ./core/cmd/cordova-vault/ {{.CLI_ARGS}}
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./core/... ./admin/...
+
+  tidy:
+    desc: Tidy go modules
+    cmds:
+      - cd core && go mod tidy
+      - cd admin && go mod tidy
+
+  # ─── Pi ───────────────────────────────────────────────────────────────────
+
+  build:pi:
+    desc: Cross-compile cordova-vault for Raspberry Pi (arm64)
+    env:
+      GOOS: linux
+      GOARCH: arm64
+      CGO_ENABLED: "0"
+      HOME: "{{.HOME}}"
+      GOCACHE: "{{.HOME}}/Library/Caches/go-build"
+    cmds:
+      - go build -o {{.BUILD_DIR}}/{{.VAULT_BIN}}-pi ./core/cmd/cordova-vault/
+    sources:
+      - ./**/*.go
+    generates:
+      - "{{.BUILD_DIR}}/{{.VAULT_BIN}}-pi"
+
+  build:admin:pi:
+    desc: Cross-compile cordova-admin for Raspberry Pi (arm64)
+    env:
+      GOOS: linux
+      GOARCH: arm64
+      CGO_ENABLED: "0"
+      HOME: "{{.HOME}}"
+      GOCACHE: "{{.HOME}}/Library/Caches/go-build"
+    cmds:
+      - go build -o {{.BUILD_DIR}}/{{.ADMIN_BIN}}-pi ./admin/cmd/cordova-admin/
+    sources:
+      - ./**/*.go
+    generates:
+      - "{{.BUILD_DIR}}/{{.ADMIN_BIN}}-pi"
+
+  build:pi:all:
+    desc: Cross-compile both binaries for Raspberry Pi
+    deps: [build:pi, build:admin:pi]
+
+  deploy:pi:
+    desc: Cross-compile and deploy both binaries to Pi via SCP
+    deps: [build:pi:all]
+    cmds:
+      - ssh {{.PI_HOST}} "sudo systemctl stop cordova-vault 2>/dev/null || true"
+      - scp {{.BUILD_DIR}}/{{.VAULT_BIN}}-pi {{.PI_HOST}}:{{.PI_DEST}}
+      - scp {{.BUILD_DIR}}/{{.ADMIN_BIN}}-pi {{.PI_HOST}}:~/go/{{.ADMIN_BIN}}-pi
+      - ssh {{.PI_HOST}} "sudo chmod +x {{.PI_DEST}} ~/go/{{.ADMIN_BIN}}-pi"
+      - echo "Deployed to {{.PI_HOST}}"
+
+  # ─── Util ─────────────────────────────────────────────────────────────────
+  #TODO this need to clean the binaries and but not the config.yaml and artifact/
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf {{.BUILD_DIR}}
