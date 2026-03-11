@@ -1,14 +1,9 @@
 // cordova/core/internal/socket/socket.go
-//
-// Package socket is a pure transport layer. It accepts connections on a Unix
-// domain socket, reads one JSON request per connection, delegates the auth
-// decision entirely to the auth package, dispatches the command to the
-// appropriate handler, and writes the response. It makes no auth decisions
-// itself and holds no auth state.
 
 package socket
 
 import (
+	"cordova/core/ipc"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -21,7 +16,6 @@ import (
 	"cordova/core/internal/auth"
 	"cordova/core/internal/store"
 	"cordova/core/internal/vault"
-	
 )
 
 const version = "0.3.0"
@@ -29,46 +23,17 @@ const version = "0.3.0"
 // Server listens on a Unix domain socket and dispatches IPC commands from
 // authenticated cordova-admin clients.
 type Server struct {
-	// socketPath is the filesystem path of the Unix domain socket.
 	socketPath string
-
-	// store is the in-memory vault state used for key/token operations.
-	store *store.Store
-
-	// vault is used to persist state after mutating commands.
-	vault *vault.Vault
-
-	// auditLog records all security-relevant events.
-	auditLog *audit.Logger
-
-	// passphrase is retained from unseal to re-encrypt the vault on mutations.
-	// It is zeroed in Stop.
+	store      *store.Store
+	vault      *vault.Vault
+	auditLog   *audit.Logger
 	passphrase []byte
-
-	// writeMu serialises all operations that mutate the store and write to
-	// disk. It covers the entire "change memory → snapshot → seal to disk"
-	// sequence so that concurrent connections cannot interleave their writes
-	// and produce an inconsistent vault file.
-	//
-	// auth.Authenticator holds a pointer to this mutex so that expired-token
-	// cleanup (revoke + persist) is serialised with all other write operations.
-	writeMu sync.Mutex
-
-	// auth is the single authority for all authentication decisions.
-	// The socket layer calls it and acts on the result; it never inspects
-	// token values or makes role decisions itself.
-	auth *auth.Authenticator
-
-	// sealCh receives a signal when a client sends the seal command, allowing
-	// the main goroutine to initiate a clean shutdown.
-	sealCh chan struct{}
-
-	// listener is the active network listener; closed by Stop.
-	listener net.Listener
+	writeMu    sync.Mutex
+	auth       *auth.Authenticator
+	sealCh     chan struct{}
+	listener   net.Listener
 }
 
-// NewServer constructs a Server. passphrase ownership is transferred to the
-// server — the caller must not use or zero it afterwards. It is zeroed in Stop.
 func NewServer(
 	socketPath string,
 	s *store.Store,
@@ -84,15 +49,9 @@ func NewServer(
 		passphrase: passphrase,
 		sealCh:     make(chan struct{}, 1),
 	}
-	// auth borrows a pointer to writeMu so that expired-token cleanup is
-	// serialised with the write handlers. srv.persist is a bound method value:
-	// calling it is equivalent to srv.persist() with the correct receiver.
 	srv.auth = auth.New(s, &srv.writeMu, srv.persist, al)
 	return srv
 }
-
-// Start removes any stale socket file, binds the listener, sets permissions to
-// 0600, and begins accepting connections in a background goroutine.
 func (s *Server) Start() error {
 	os.Remove(s.socketPath)
 
@@ -113,16 +72,9 @@ func (s *Server) Start() error {
 	go s.acceptLoop()
 	return nil
 }
-
-// SealRequested returns a channel that receives a value when a client sends
-// the seal command. The main goroutine should listen on this channel and call
-// Stop when it fires.
 func (s *Server) SealRequested() <-chan struct{} {
 	return s.sealCh
 }
-
-// Stop closes the listener, removes the socket file, and zeros the passphrase
-// from memory.
 func (s *Server) Stop() {
 	if s.listener != nil {
 		s.listener.Close()
@@ -131,9 +83,6 @@ func (s *Server) Stop() {
 	zeroBytes(s.passphrase)
 	s.auditLog.Log(audit.Entry{Event: audit.EventSocketStop, Source: s.socketPath})
 }
-
-// acceptLoop accepts incoming connections until the listener is closed.
-// Each connection is handled in its own goroutine.
 func (s *Server) acceptLoop() {
 	for {
 		conn, err := s.listener.Accept()
@@ -143,10 +92,6 @@ func (s *Server) acceptLoop() {
 		go s.handleConn(conn)
 	}
 }
-
-// handleConn is the transport handler. It sets a deadline, decodes one JSON
-// request, delegates to auth, and writes the response. It does not make any
-// auth decisions itself.
 func (s *Server) handleConn(conn net.Conn) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(30 * time.Second)) //nolint:errcheck
@@ -162,15 +107,10 @@ func (s *Server) handleConn(conn net.Conn) {
 		writeResp(conn, ipc.Response{OK: false, Error: result.Err})
 		return
 	}
-
-	// Update last-used timestamp. This is a lightweight in-memory update
-	// that does not require writeMu (it does not touch the vault file).
 	s.store.TouchToken(result.Token.Name)
 
 	writeResp(conn, s.dispatch(req))
 }
-
-// dispatch routes a validated request to the appropriate handler.
 func (s *Server) dispatch(req ipc.Request) ipc.Response {
 	switch req.Command {
 	case ipc.CmdKeyGet:
@@ -199,8 +139,6 @@ func (s *Server) dispatch(req ipc.Request) ipc.Response {
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
-
-// handleKeyGet retrieves a key value from the store.
 func (s *Server) handleKeyGet(raw json.RawMessage) ipc.Response {
 	var p ipc.KeyGetParams
 	if err := json.Unmarshal(raw, &p); err != nil {
@@ -213,9 +151,6 @@ func (s *Server) handleKeyGet(raw json.RawMessage) ipc.Response {
 	s.auditLog.Log(audit.Entry{Event: audit.EventKeyGet, Key: p.Name})
 	return okResp(ipc.KeyGetData{Name: p.Name, Value: value})
 }
-
-// handleKeySet adds or rotates a key. writeMu ensures the store mutation and
-// disk write are atomic.
 func (s *Server) handleKeySet(raw json.RawMessage) ipc.Response {
 	var p ipc.KeySetParams
 	if err := json.Unmarshal(raw, &p); err != nil {
@@ -242,8 +177,6 @@ func (s *Server) handleKeySet(raw json.RawMessage) ipc.Response {
 	}
 	return okResp(ipc.AckData{Message: "ok"})
 }
-
-// handleKeyDelete removes a key from the store and persists the change.
 func (s *Server) handleKeyDelete(raw json.RawMessage) ipc.Response {
 	var p ipc.KeyDeleteParams
 	if err := json.Unmarshal(raw, &p); err != nil {
@@ -274,17 +207,10 @@ func (s *Server) handleKeyList() ipc.Response {
 	}
 	return okResp(ipc.KeyListData{Keys: keys})
 }
-
-// handleTokenAdd creates a new token and persists it (unless ephemeral).
 func (s *Server) handleTokenAdd(raw json.RawMessage) ipc.Response {
 	var p ipc.TokenAddParams
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return errResp("invalid params: " + err.Error())
-	}
-
-	role := vault.TokenRole(p.Role)
-	if role != vault.RoleAdmin && role != vault.RoleAccess {
-		return errResp("invalid role: must be \"admin\" or \"access\"")
 	}
 
 	var expiresAt *time.Time
@@ -307,7 +233,7 @@ func (s *Server) handleTokenAdd(raw json.RawMessage) ipc.Response {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	secret, err := s.store.AddToken(p.Name, p.Description, role, expiresAt, p.CIDRs, p.Namespaces, p.Keys, p.Writable)
+	secret, err := s.store.AddToken(p.Name, p.Description, expiresAt, p.CIDRs, p.Namespaces, p.Keys, p.Writable)
 	if err != nil {
 		return errResp(err.Error())
 	}
@@ -339,8 +265,6 @@ func (s *Server) handleTokenAdd(raw json.RawMessage) ipc.Response {
 		Writable:    p.Writable,
 	})
 }
-
-// handleTokenList returns a summary of all tokens in the store. Read-only.
 func (s *Server) handleTokenList() ipc.Response {
 	tokens, err := s.store.ListTokens()
 	if err != nil {
@@ -351,7 +275,6 @@ func (s *Server) handleTokenList() ipc.Response {
 		ts := ipc.TokenSummary{
 			Name:        t.Name,
 			Description: t.Description,
-			Role:        string(t.Role),
 			CIDRs:       t.CIDRs,
 			Namespaces:  t.Namespaces,
 			Keys:        t.Keys,
@@ -373,8 +296,6 @@ func (s *Server) handleTokenList() ipc.Response {
 	}
 	return okResp(ipc.TokenListData{Tokens: summaries})
 }
-
-// handleTokenRevoke removes a single token by name and persists the change.
 func (s *Server) handleTokenRevoke(raw json.RawMessage) ipc.Response {
 	var p ipc.TokenRevokeParams
 	if err := json.Unmarshal(raw, &p); err != nil {
@@ -396,8 +317,6 @@ func (s *Server) handleTokenRevoke(raw json.RawMessage) ipc.Response {
 	})
 	return okResp(ipc.AckData{Message: "ok"})
 }
-
-// handleTokenRevokeAll removes every token and persists the change.
 func (s *Server) handleTokenRevokeAll() ipc.Response {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
@@ -411,9 +330,6 @@ func (s *Server) handleTokenRevokeAll() ipc.Response {
 	s.auditLog.Log(audit.Entry{Event: audit.EventTokenRevokeAll})
 	return okResp(ipc.AckData{Message: "all tokens revoked"})
 }
-
-// handleSeal re-encrypts the vault with a fresh salt and nonce under writeMu,
-// then signals the main goroutine to shut down.
 func (s *Server) handleSeal() ipc.Response {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
@@ -429,20 +345,12 @@ func (s *Server) handleSeal() ipc.Response {
 	}
 	return okResp(ipc.AckData{Message: "sealing"})
 }
-
-// handleStatus returns the current sealed/unsealed state and daemon version.
-// Read-only.
 func (s *Server) handleStatus() ipc.Response {
 	return okResp(ipc.StatusData{
 		Sealed:  s.store.IsSealed(),
 		Version: version,
 	})
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-// persist snapshots the current store state and re-encrypts it to disk.
-// Must be called with writeMu held.
 func (s *Server) persist() error {
 	snap, err := s.store.Snapshot()
 	if err != nil {
@@ -450,24 +358,16 @@ func (s *Server) persist() error {
 	}
 	return s.vault.Seal(snap, s.passphrase)
 }
-
-// okResp encodes data as JSON and returns a successful Response.
 func okResp(data any) ipc.Response {
 	b, _ := json.Marshal(data)
 	return ipc.Response{OK: true, Data: json.RawMessage(b)}
 }
-
-// errResp returns a failed Response with a human-readable error message.
 func errResp(msg string) ipc.Response {
 	return ipc.Response{OK: false, Error: msg}
 }
-
-// writeResp encodes resp as JSON and writes it to conn.
 func writeResp(conn net.Conn, resp ipc.Response) {
 	json.NewEncoder(conn).Encode(resp) //nolint:errcheck
 }
-
-// zeroBytes overwrites b with zeros to clear sensitive material from memory.
 func zeroBytes(b []byte) {
 	for i := range b {
 		b[i] = 0

@@ -1,9 +1,4 @@
 // cordova/admin/tui/model.go
-//
-// Package tui implements the bubbletea-based interactive terminal UI for
-// cordova-admin. It follows the Elm architecture: Model holds all state,
-// Update handles messages (key presses and IPC responses), and View renders
-// the current screen. Run is the public entry point.
 
 package tui
 
@@ -13,15 +8,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-
 	"cordova/admin/client"
 	"cordova/core/ipc"
 	"cordova/core/validate"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-// screen identifies which top-level view is currently displayed.
 type screen int
 
 const (
@@ -32,7 +25,6 @@ const (
 	screenStatus               // vault status and seal
 )
 
-// inputStep tracks which field is being collected during a multi-step form.
 type inputStep int
 
 const (
@@ -49,46 +41,36 @@ const (
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
-// authDoneMsg is returned by probeClient once the socket probe completes.
-// On success, client holds the ready-to-use IPC client. On failure, err is set
-// and the auth screen stays visible so the user can try again.
 type authDoneMsg struct {
 	client *client.Client
 	err    error
 }
 
-// keysLoadedMsg carries the result of a key list IPC call.
 type keysLoadedMsg struct {
 	keys []string
 	err  error
 }
 
-// tokensLoadedMsg carries the result of a token list IPC call.
 type tokensLoadedMsg struct {
 	tokens []ipc.TokenSummary
 	err    error
 }
 
-// statusLoadedMsg carries the result of a status IPC call.
 type statusLoadedMsg struct {
 	data ipc.StatusData
 	err  error
 }
 
-// keyValueMsg carries the result of a key.get IPC call.
 type keyValueMsg struct {
 	name  string
 	value string
 	err   error
 }
 
-// actionDoneMsg signals that a mutating IPC command completed.
 type actionDoneMsg struct {
 	err error
 }
 
-// tokenCreatedMsg carries the new token's name and one-time secret after a
-// successful create.
 type tokenCreatedMsg struct {
 	name   string
 	secret string
@@ -98,9 +80,6 @@ type tokenCreatedMsg struct {
 
 // ── Commands (async IPC calls) ─────────────────────────────────────────────────
 
-// probeClient dials the socket to confirm the daemon is reachable, then
-// returns the ready-to-use client. This is intentionally a socket-level check
-// only — token validity is confirmed on the first real command.
 func probeClient(socketPath, token string) tea.Cmd {
 	return func() tea.Msg {
 		c := client.New(socketPath, token)

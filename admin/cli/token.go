@@ -16,7 +16,6 @@ import (
 	"cordova/core/ipc"
 )
 
-// tokenCmd is the parent command for token management subcommands.
 var tokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Token management",
@@ -30,23 +29,11 @@ func init() {
 }
 
 var (
-	// nameFlag is the unique slug identifier for the token (required).
-	nameFlag string
-
-	// adminFlag creates an admin-role token when set.
-	adminFlag bool
-
-	// ephemeralFlag creates a process-scoped token that is never written to disk.
+	nameFlag      string
+	adminFlag     bool
 	ephemeralFlag bool
-
-	// ttlFlag sets a time-to-live duration for the token, e.g. "24h" or "30m".
-	ttlFlag string
+	ttlFlag       string
 )
-
-// tokenCreateCmd creates a new token. --admin produces a full-access admin
-// token; without it the token is created with the "access" role (scoped,
-// for future cordova-http/ssh use). --ephemeral makes the token process-scoped.
-// --ttl accepts a Go duration (e.g. 24h) and sets an absolute expiry.
 var tokenCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a new token (--admin for full access, --ephemeral, --ttl <duration>)",
@@ -72,7 +59,6 @@ var tokenCreateCmd = &cobra.Command{
 			role = "admin"
 		}
 
-		// Resolve the ExpiresAt wire value from flags.
 		expiresAt := "" // empty = persistent
 		if ephemeralFlag {
 			expiresAt = "ephemeral"
@@ -94,7 +80,6 @@ var tokenCreateCmd = &cobra.Command{
 			ExpiresAt:   expiresAt,
 		}
 
-		// Access-role tokens require at least one namespace or explicit key.
 		if role == "access" {
 			fmt.Print("CIDRs (comma-separated, e.g. 10.0.0.1/32): ")
 			scanner.Scan()
@@ -156,7 +141,6 @@ func init() {
 	tokenCreateCmd.Flags().StringVar(&ttlFlag, "ttl", "", "time-to-live for the token, e.g. 24h or 30m")
 }
 
-// tokenListCmd prints all persistent tokens in a tabular format.
 var tokenListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all tokens",

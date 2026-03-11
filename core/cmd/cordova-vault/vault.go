@@ -12,14 +12,10 @@ import (
 	"cordova/core/internal/vault"
 )
 
-// vaultCmd is the parent command for vault lifecycle operations.
 var vaultCmd = &cobra.Command{
 	Use:   "vault",
 	Short: "Vault lifecycle commands (init, etc.)",
 }
-
-// vaultInitCmd creates a new, empty vault encrypted with a user-supplied
-// passphrase.
 var vaultInitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialise a new empty vault",
@@ -29,9 +25,6 @@ var vaultInitCmd = &cobra.Command{
 func init() {
 	vaultCmd.AddCommand(vaultInitCmd)
 }
-
-// runVaultInit prompts for a new passphrase (confirmed), creates the vault
-// directory if needed, and writes an empty encrypted vault file.
 func runVaultInit(cmd *cobra.Command, args []string) error {
 	c := cfg.Cordova
 	vaultPath := vaultFilePath(c.USB.MountBase, c.USB.VaultFilename)

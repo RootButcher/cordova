@@ -28,7 +28,6 @@
 # vendor/
 
 # Go workspace file
-go.work
 go.work.sum
 
 # env file
@@ -40,3 +39,4 @@ go.work.sum
 
 /core/go.sum
 /admin/go.sum
+!/go.work

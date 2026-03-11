@@ -9,12 +9,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the root configuration structure for cordova.
 type Config struct {
 	Cordova CordovaConfig `yaml:"cordova"`
 }
 
-// CordovaConfig holds the top-level cordova daemon configuration.
 type CordovaConfig struct {
 	RootSocket string      `yaml:"root_socket"`
 	USB        USBConfig   `yaml:"usb"`
@@ -22,7 +20,6 @@ type CordovaConfig struct {
 	KDF        KDFConfig   `yaml:"kdf"`
 }
 
-// USBConfig holds USB key mount configuration.
 type USBConfig struct {
 	PrimaryLabel  string `yaml:"primary_label"`
 	BackupLabel   string `yaml:"backup_label"`
@@ -30,20 +27,18 @@ type USBConfig struct {
 	VaultFilename string `yaml:"vault_filename"`
 }
 
-// AuditConfig holds audit log configuration.
 type AuditConfig struct {
 	LogPath   string `yaml:"log_path"`
 	MaxSizeMB int    `yaml:"max_size_mb"`
 }
 
-// KDFConfig holds Argon2id KDF tuning parameters.
 type KDFConfig struct {
 	Time    uint32 `yaml:"argon2id_time"`
 	Memory  uint32 `yaml:"argon2id_memory"`
 	Threads uint8  `yaml:"argon2id_threads"`
 }
 
-// Defaults returns a Config populated with safe defaults.
+// TODO make default an embedded .yaml file
 func Defaults() *Config {
 	return &Config{
 		Cordova: CordovaConfig{
@@ -67,8 +62,6 @@ func Defaults() *Config {
 	}
 }
 
-// Load reads and parses a config file from path.
-// Missing fields fall back to defaults.
 func Load(path string) (*Config, error) {
 	cfg := Defaults()
 
@@ -91,7 +84,6 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// Save writes the config atomically to path.
 func (c *Config) Save(path string) error {
 	tmp := path + ".tmp"
 
@@ -117,7 +109,6 @@ func (c *Config) Save(path string) error {
 	return nil
 }
 
-// Validate checks required fields.
 func (c *Config) Validate() error {
 	if c.Cordova.RootSocket == "" {
 		return fmt.Errorf("root_socket is required")

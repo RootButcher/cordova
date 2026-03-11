@@ -15,7 +15,6 @@ import (
 	"cordova/core/ipc"
 )
 
-// keyCmd is the parent command for key management subcommands.
 var keyCmd = &cobra.Command{
 	Use:   "key",
 	Short: "Key management",
@@ -29,7 +28,6 @@ func init() {
 	keyCmd.AddCommand(keyListCmd)
 }
 
-// keyGetCmd retrieves and prints a single key value.
 var keyGetCmd = &cobra.Command{
 	Use:   "get <name>",
 	Short: "Print a key value",
@@ -51,7 +49,6 @@ var keyGetCmd = &cobra.Command{
 	},
 }
 
-// keyAddCmd adds a new key, prompting for the value with hidden input.
 var keyAddCmd = &cobra.Command{
 	Use:   "add <name>",
 	Short: "Add a new key (value prompted, hidden)",
@@ -79,8 +76,6 @@ var keyAddCmd = &cobra.Command{
 		return nil
 	},
 }
-
-// keyRotateCmd replaces the value of an existing key, prompting with hidden input.
 var keyRotateCmd = &cobra.Command{
 	Use:   "rotate <name>",
 	Short: "Replace a key value (new value prompted, hidden)",
@@ -108,8 +103,6 @@ var keyRotateCmd = &cobra.Command{
 		return nil
 	},
 }
-
-// keyDeleteCmd removes a key after a y/N confirmation prompt.
 var keyDeleteCmd = &cobra.Command{
 	Use:   "delete <name>",
 	Short: "Delete a key (prompts for confirmation)",
@@ -135,8 +128,6 @@ var keyDeleteCmd = &cobra.Command{
 		return nil
 	},
 }
-
-// keyListCmd prints all key names, one per line.
 var keyListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all key names",

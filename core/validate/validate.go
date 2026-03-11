@@ -1,9 +1,5 @@
 // cordova/core/validate/validate.go
-//
-// Package validate provides shared input validation rules for token names and
-// key names. It is intentionally outside internal/ so both cordova-vault and
-// cordova-admin can import it without violating Go's visibility rules.
-// It has no external dependencies — only the standard library.
+
 package validate
 
 import (
@@ -11,13 +7,6 @@ import (
 	"strings"
 )
 
-// ValidateTokenName returns an error if name is not a valid token slug.
-//
-// Rules:
-//   - Lowercase ASCII letters, digits, and hyphens only
-//   - Must start and end with a letter or digit (no leading/trailing hyphens)
-//   - No consecutive hyphens
-//   - Between 1 and 64 characters long
 func ValidateTokenName(name string) error {
 	if len(name) == 0 {
 		return fmt.Errorf("token name cannot be empty")
@@ -47,13 +36,6 @@ func ValidateTokenName(name string) error {
 	}
 	return nil
 }
-
-// ValidateKeyName returns an error if name is not in "namespace/name" format.
-//
-// Rules:
-//   - Exactly one forward slash separating two non-empty parts
-//   - No whitespace anywhere in the name
-//   - No sub-namespaces (only one slash allowed)
 func ValidateKeyName(name string) error {
 	if strings.ContainsAny(name, " \t\n\r") {
 		return fmt.Errorf("key name must not contain whitespace: %q", name)

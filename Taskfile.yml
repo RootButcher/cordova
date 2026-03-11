@@ -3,11 +3,11 @@
 version: '3'
 
 vars:
-  VAULT_BIN:  cordova-vault
-  ADMIN_BIN:  cordova-admin
-  BUILD_DIR:  build
-  PI_HOST:    cordova.rootbutcher.dev
-  PI_DEST:    ~/go/cordova-pi
+  VAULT_BIN: cordova-vault
+  ADMIN_BIN: cordova-admin
+  BUILD_DIR: build
+  PI_HOST: cordova.rootbutcher.dev
+  PI_DEST: ~/go/cordova-pi
 
 tasks:
 
@@ -33,7 +33,7 @@ tasks:
 
   build:all:
     desc: Build both binaries for local macOS
-    deps: [build, build:admin]
+    deps: [ build, build:admin ]
 
   run:
     desc: Run cordova-vault daemon locally
@@ -85,11 +85,11 @@ tasks:
 
   build:pi:all:
     desc: Cross-compile both binaries for Raspberry Pi
-    deps: [build:pi, build:admin:pi]
+    deps: [ build:pi, build:admin:pi ]
 
   deploy:pi:
     desc: Cross-compile and deploy both binaries to Pi via SCP
-    deps: [build:pi:all]
+    deps: [ build:pi:all ]
     cmds:
       - ssh {{.PI_HOST}} "sudo systemctl stop cordova-vault 2>/dev/null || true"
       - scp {{.BUILD_DIR}}/{{.VAULT_BIN}}-pi {{.PI_HOST}}:{{.PI_DEST}}

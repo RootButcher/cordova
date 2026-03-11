@@ -6,12 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/spf13/cobra"
-
 	"cordova/core/ipc"
+	"github.com/spf13/cobra"
 )
 
-// statusCmd queries and prints the daemon's current sealed/unsealed state.
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show vault status and daemon version",
@@ -35,8 +33,6 @@ var statusCmd = &cobra.Command{
 		return nil
 	},
 }
-
-// sealCmd instructs the daemon to seal the vault and exit cleanly.
 var sealCmd = &cobra.Command{
 	Use:   "seal",
 	Short: "Seal the vault and stop the daemon",
