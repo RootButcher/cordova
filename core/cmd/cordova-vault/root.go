@@ -36,7 +36,7 @@ var rootCmd = &cobra.Command{
 
 func execute() {
 	if err := rootCmd.Execute(); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err) //TODO log error
+		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }

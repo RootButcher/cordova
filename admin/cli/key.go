@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"cordova/core/ipc"
+	. "cordova/core/ipc"
 )
 
 var keyCmd = &cobra.Command{
@@ -33,14 +33,14 @@ var keyGetCmd = &cobra.Command{
 	Short: "Print a key value",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := Client.Send(ipc.CmdKeyGet, ipc.KeyGetParams{Name: args[0]})
+		resp, err := Client.Send(CmdKeyGet, KeyGetParams{Name: args[0]})
 		if err != nil {
 			return err
 		}
 		if !resp.OK {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		var d ipc.KeyGetData
+		var d KeyGetData
 		if err := json.Unmarshal(resp.Data, &d); err != nil {
 			return err
 		}
@@ -55,9 +55,9 @@ var keyAddCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		_, _ = fmt.Fprintf(os.Stderr, "value: ") //TODO log error
+		_, _ = fmt.Fprintf(os.Stderr, "value: ")
 		value, err := term.ReadPassword(int(os.Stdin.Fd()))
-		_, _ = fmt.Fprintln(os.Stderr) //TODO log error
+		_, _ = fmt.Fprintln(os.Stderr)
 		if err != nil {
 			return fmt.Errorf("reading value: %w", err)
 		}
@@ -65,7 +65,7 @@ var keyAddCmd = &cobra.Command{
 			return fmt.Errorf("value cannot be empty")
 		}
 
-		resp, err := Client.Send(ipc.CmdKeySet, ipc.KeySetParams{Name: name, Value: string(value)})
+		resp, err := Client.Send(CmdKeySet, KeySetParams{Name: name, Value: string(value)})
 		if err != nil {
 			return err
 		}
@@ -82,9 +82,9 @@ var keyRotateCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		_, _ = fmt.Fprintf(os.Stderr, "new value: ") //TODO log error
+		_, _ = fmt.Fprintf(os.Stderr, "new value: ")
 		value, err := term.ReadPassword(int(os.Stdin.Fd()))
-		_, _ = fmt.Fprintln(os.Stderr) //TODO log error
+		_, _ = fmt.Fprintln(os.Stderr)
 		if err != nil {
 			return fmt.Errorf("reading value: %w", err)
 		}
@@ -92,7 +92,7 @@ var keyRotateCmd = &cobra.Command{
 			return fmt.Errorf("value cannot be empty")
 		}
 
-		resp, err := Client.Send(ipc.CmdKeySet, ipc.KeySetParams{Name: name, Value: string(value)})
+		resp, err := Client.Send(CmdKeySet, KeySetParams{Name: name, Value: string(value)})
 		if err != nil {
 			return err
 		}
@@ -117,7 +117,7 @@ var keyDeleteCmd = &cobra.Command{
 			return nil
 		}
 
-		resp, err := Client.Send(ipc.CmdKeyDelete, ipc.KeyDeleteParams{Name: name})
+		resp, err := Client.Send(CmdKeyDelete, KeyDeleteParams{Name: name})
 		if err != nil {
 			return err
 		}
@@ -132,14 +132,14 @@ var keyListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all key names",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := Client.Send(ipc.CmdKeyList, nil)
+		resp, err := Client.Send(CmdKeyList, nil)
 		if err != nil {
 			return err
 		}
 		if !resp.OK {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		var d ipc.KeyListData
+		var d KeyListData
 		if err := json.Unmarshal(resp.Data, &d); err != nil {
 			return err
 		}
