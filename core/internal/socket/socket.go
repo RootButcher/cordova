@@ -749,7 +749,7 @@ func (s *Server) persist() error {
 
 func okResp(data any) ipc.Response {
 	b, _ := json.Marshal(data)
-	return ipc.Response{OK: true, Data: json.RawMessage(b)}
+	return ipc.Response{OK: true, Data: b}
 }
 
 func errResp(msg string) ipc.Response {

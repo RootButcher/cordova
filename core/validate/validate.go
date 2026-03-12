@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// ValidateTokenName validates a token slug name: 1–64 chars, lowercase letters,
+// TokenName validates a token slug name: 1–64 chars, lowercase letters,
 // digits, and hyphens; no leading, trailing, or consecutive hyphens.
-func ValidateTokenName(name string) error {
+func TokenName(name string) error {
 	if len(name) == 0 {
 		return fmt.Errorf("token name cannot be empty")
 	}
@@ -39,8 +39,8 @@ func ValidateTokenName(name string) error {
 	return nil
 }
 
-// ValidateKeyName validates a key name in namespace/name format.
-func ValidateKeyName(name string) error {
+// KeyName validates a key name in namespace/name format.
+func KeyName(name string) error {
 	if strings.ContainsAny(name, " \t\n\r") {
 		return fmt.Errorf("key name must not contain whitespace: %q", name)
 	}
@@ -51,8 +51,8 @@ func ValidateKeyName(name string) error {
 	return nil
 }
 
-// ValidateUsername validates a user slug name using the same rules as token names.
-func ValidateUsername(name string) error {
+// Username validates a user slug name using the same rules as token names.
+func Username(name string) error {
 	if len(name) == 0 {
 		return fmt.Errorf("username cannot be empty")
 	}
@@ -82,8 +82,8 @@ func ValidateUsername(name string) error {
 	return nil
 }
 
-// ValidateSocketName validates a socket entry name using the same slug rules.
-func ValidateSocketName(name string) error {
+// SocketName validates a socket entry name using the same slug rules.
+func SocketName(name string) error {
 	if len(name) == 0 {
 		return fmt.Errorf("socket name cannot be empty")
 	}

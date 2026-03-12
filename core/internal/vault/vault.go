@@ -211,7 +211,7 @@ func (v *UsersVault) Path() string { return v.path }
 
 // ── Shared crypto primitives ──────────────────────────────────────────────────
 
-// unsealFile reads, decrypts, and JSON-unmarshals a vault file into dst.
+// unsealFile reads, decrypts, and JSON-unmarshall a vault file into dst.
 func unsealFile(path string, params KDFParams, passphrase []byte, dst any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

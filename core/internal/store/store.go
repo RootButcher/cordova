@@ -98,7 +98,7 @@ func (s *SecretsStore) ListKeys() ([]string, error) {
 
 // SetKey creates or replaces a key value.
 func (s *SecretsStore) SetKey(name, value string) error {
-	if err := validate.ValidateKeyName(name); err != nil {
+	if err := validate.KeyName(name); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -233,7 +233,7 @@ func (s *UserStore) AddUser(
 	namespaces, keys, sockets []string,
 	writable bool,
 ) error {
-	if err := validate.ValidateUsername(name); err != nil {
+	if err := validate.Username(name); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -325,7 +325,7 @@ func (s *UserStore) AddToken(
 	username, name, description string,
 	expiresAt *time.Time,
 ) (secret string, err error) {
-	if err := validate.ValidateTokenName(name); err != nil {
+	if err := validate.TokenName(name); err != nil {
 		return "", err
 	}
 	s.mu.Lock()

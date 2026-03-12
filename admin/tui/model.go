@@ -63,7 +63,7 @@ const (
 // permItem is one row in the permission toggle list.
 type permItem struct {
 	kind  permItemKind
-	key   string // "admin","writable","unrestricted" for bools; "ns","key","sock" for lists
+	key   string // "admin","writable","unrestricted" for bool; "ns","key","sock" for lists
 	value string // listEntry: the value; addAction: display label
 	on    bool   // boolToggle: current state
 	dim   bool   // render dimmed (e.g. ns/key rows when unrestricted overrides)
@@ -904,7 +904,7 @@ func buildSocketScopeItems(m Model) []permItem {
 	return items
 }
 
-// updateUserPerms handles keypresses on the user permission toggle screen.
+// updateUserPerms handles key-presses on the user permission toggle screen.
 func (m Model) updateUserPerms(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	items := buildUserPermItems(m)
 	switch msg.String() {
@@ -942,6 +942,8 @@ func (m Model) updateUserPerms(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.permCursor >= len(newItems) {
 				m.permCursor = len(newItems) - 1
 			}
+		case permAddAction:
+		case permDone:
 		}
 	case "enter":
 		if m.permCursor >= len(items) {
@@ -977,6 +979,7 @@ func (m Model) updateUserPerms(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.permCursor = 0
 			m.loading = true
 			return m, createUser(m.client, name, parent, admin, writable, ns, keys, socks)
+		case permListEntry:
 		}
 	case "d":
 		if m.permCursor >= len(items) {
@@ -1007,7 +1010,7 @@ func (m Model) updateUserPerms(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateSocketScope handles keypresses on the socket scope toggle screen.
+// updateSocketScope handles key-presses on the socket scope toggle screen.
 func (m Model) updateSocketScope(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	items := buildSocketScopeItems(m)
 	switch msg.String() {
@@ -1043,6 +1046,8 @@ func (m Model) updateSocketScope(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.permCursor >= len(newItems) {
 				m.permCursor = len(newItems) - 1
 			}
+		case permAddAction:
+		case permDone:
 		}
 	case "enter":
 		if m.permCursor >= len(items) {
@@ -1078,6 +1083,7 @@ func (m Model) updateSocketScope(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.permCursor = 0
 			m.loading = true
 			return m, addSocket(m.client, name, path, unrestricted, writable, ns, keys)
+		case permListEntry:
 		}
 	case "d":
 		if m.permCursor >= len(items) {
@@ -1106,7 +1112,7 @@ func (m Model) updateSocketScope(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateForm handles keypresses while a multi-step form is active.
+// updateForm handles key-presses while a multistep form is active.
 func (m Model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.step {
 
@@ -1243,7 +1249,7 @@ func (m Model) advanceForm(val string) (tea.Model, tea.Cmd) {
 		return m, setKey(m.client, name, val)
 
 	case stepTokenUser:
-		if err := validate.ValidateUsername(val); err != nil {
+		if err := validate.Username(val); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
@@ -1255,7 +1261,7 @@ func (m Model) advanceForm(val string) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 
 	case stepTokenName:
-		if err := validate.ValidateTokenName(val); err != nil {
+		if err := validate.TokenName(val); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
@@ -1280,7 +1286,7 @@ func (m Model) advanceForm(val string) (tea.Model, tea.Cmd) {
 		return m, createToken(m.client, username, name, val)
 
 	case stepUserName:
-		if err := validate.ValidateUsername(val); err != nil {
+		if err := validate.Username(val); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
@@ -1292,7 +1298,7 @@ func (m Model) advanceForm(val string) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 
 	case stepUserParent:
-		if err := validate.ValidateUsername(val); err != nil {
+		if err := validate.Username(val); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
@@ -1308,7 +1314,7 @@ func (m Model) advanceForm(val string) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 
 	case stepSocketName:
-		if err := validate.ValidateSocketName(val); err != nil {
+		if err := validate.SocketName(val); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
