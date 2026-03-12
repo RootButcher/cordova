@@ -53,7 +53,7 @@ func NewServer(
 	return srv
 }
 func (s *Server) Start() error {
-	os.Remove(s.socketPath)
+	_ = os.Remove(s.socketPath) //TODO log error
 
 	ln, err := net.Listen("unix", s.socketPath)
 	if err != nil {
@@ -62,7 +62,7 @@ func (s *Server) Start() error {
 	s.listener = ln
 
 	if err := os.Chmod(s.socketPath, 0600); err != nil {
-		ln.Close()
+		_ = ln.Close() //TODO log error
 		return fmt.Errorf("setting socket permissions: %w", err)
 	}
 
@@ -77,9 +77,9 @@ func (s *Server) SealRequested() <-chan struct{} {
 }
 func (s *Server) Stop() {
 	if s.listener != nil {
-		s.listener.Close()
+		_ = s.listener.Close() //TODO log error
 	}
-	os.Remove(s.socketPath)
+	_ = os.Remove(s.socketPath) //TODO log error
 	zeroBytes(s.passphrase)
 	s.auditLog.Log(audit.Entry{Event: audit.EventSocketStop, Source: s.socketPath})
 }
@@ -93,8 +93,10 @@ func (s *Server) acceptLoop() {
 	}
 }
 func (s *Server) handleConn(conn net.Conn) {
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(30 * time.Second)) //nolint:errcheck
+	defer func(conn net.Conn) {
+		_ = conn.Close() //TODO log error
+	}(conn)
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second)) //TODO log error
 
 	var req ipc.Request
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {

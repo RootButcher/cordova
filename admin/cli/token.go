@@ -162,7 +162,7 @@ var tokenListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tROLE\tDESCRIPTION\tCREATED\tLAST USED")
+		_, _ = fmt.Fprintln(w, "NAME\tROLE\tDESCRIPTION\tCREATED\tLAST USED") //TODO log error
 		for _, t := range d.Tokens {
 			lastUsed := "never"
 			if t.LastUsed != "" {
@@ -174,10 +174,10 @@ var tokenListCmd = &cobra.Command{
 			if ts, err := time.Parse(time.RFC3339, t.CreatedAt); err == nil {
 				created = ts.Format("2006-01-02")
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				t.Name, t.Role, t.Description, created, lastUsed)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+				t.Name, t.Role, t.Description, created, lastUsed) //TODO log error
 		}
-		w.Flush()
+		_ = w.Flush() //TODO log error
 		return nil
 	},
 }

@@ -33,6 +33,7 @@ func init() {
 		"generate a one-time ephemeral root token (for bootstrapping only)")
 }
 
+// TODO unused params claude explain
 func runServe(cmd *cobra.Command, args []string) error {
 	c := cfg.Cordova
 	if err := os.MkdirAll(dirOf(c.Audit.LogPath), 0700); err != nil {
@@ -42,7 +43,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("opening audit log: %w", err)
 	}
-	defer auditLog.Close()
+	defer func(auditLog *audit.Logger) {
+		_ = auditLog.Close()
+	}(auditLog)
 
 	if err := os.MkdirAll(dirOf(c.RootSocket), 0700); err != nil {
 		return fmt.Errorf("creating socket dir: %w", err)
@@ -59,9 +62,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	s := store.New()
 	defer s.Zero()
 
-	fmt.Fprint(os.Stderr, "passphrase: ")
+	_, _ = fmt.Fprint(os.Stderr, "passphrase: ") //TODO log error
 	passphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Fprintln(os.Stderr)
+	_, _ = fmt.Fprintln(os.Stderr) //TODO log error
 	if err != nil {
 		return fmt.Errorf("reading passphrase: %w", err)
 	}
@@ -81,7 +84,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			zeroBytes(passphrase)
 			return fmt.Errorf("generating root token: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "root-token: %s\n", secret)
+		_, _ = fmt.Fprintf(os.Stderr, "root-token: %s\n", secret) //TODO log error
 	}
 	srv := socket.NewServer(c.RootSocket, s, v, auditLog, passphrase)
 	passphrase = nil

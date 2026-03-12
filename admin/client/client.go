@@ -30,7 +30,7 @@ func (c *Client) Probe() error {
 	if err != nil {
 		return fmt.Errorf("connecting to daemon at %s: %w", c.socketPath, err)
 	}
-	conn.Close()
+	_ = conn.Close() //TODO log error
 	return nil
 }
 func (c *Client) Send(cmd string, params any) (*ipc.Response, error) {
@@ -54,9 +54,11 @@ func (c *Client) Send(cmd string, params any) (*ipc.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connecting to daemon at %s: %w", c.socketPath, err)
 	}
-	defer conn.Close()
+	defer func(conn net.Conn) {
+		_ = conn.Close() //TODO log error
+	}(conn)
 
-	conn.SetDeadline(time.Now().Add(requestTimeout))
+	_ = conn.SetDeadline(time.Now().Add(requestTimeout)) //TODO log error
 
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
 		return nil, fmt.Errorf("sending request: %w", err)

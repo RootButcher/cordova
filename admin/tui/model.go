@@ -430,6 +430,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, loadTokens(m.client)
 		case screenStatus:
 			return m, tea.Quit
+		case screenAuth:
+		case screenMenu:
 		}
 		return m, nil
 
@@ -750,6 +752,10 @@ func (m Model) advanceForm(val string) (tea.Model, tea.Cmd) {
 		m.input.Blur()
 		m.loading = true
 		return m, createAdminToken(m.client, name, val)
+	case stepNone:
+	case stepConfirm:
+	case stepTokenCreated:
+	case stepKeyView:
 	}
 
 	return m, nil

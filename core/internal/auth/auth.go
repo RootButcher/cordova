@@ -50,8 +50,8 @@ func (a *Authenticator) Authenticate(tokenValue, socketPath, command string) Res
 
 	if tok.IsExpired() {
 		a.writeMu.Lock()
-		a.store.RevokeToken(tok.Name)
-		a.persist()
+		_ = a.store.RevokeToken(tok.Name) //TODO log error
+		_ = a.persist()                   //TODO log error
 		a.writeMu.Unlock()
 		a.auditLog.Log(audit.Entry{Event: audit.EventTokenExpired, Source: socketPath})
 		return Result{Err: "token expired"}

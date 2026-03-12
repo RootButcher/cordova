@@ -25,6 +25,8 @@ var vaultInitCmd = &cobra.Command{
 func init() {
 	vaultCmd.AddCommand(vaultInitCmd)
 }
+
+// TODO Claude explain unused params
 func runVaultInit(cmd *cobra.Command, args []string) error {
 	c := cfg.Cordova
 	vaultPath := vaultFilePath(c.USB.MountBase, c.USB.VaultFilename)

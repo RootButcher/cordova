@@ -55,9 +55,9 @@ var keyAddCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		fmt.Fprintf(os.Stderr, "value: ")
+		_, _ = fmt.Fprintf(os.Stderr, "value: ") //TODO log error
 		value, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
+		_, _ = fmt.Fprintln(os.Stderr) //TODO log error
 		if err != nil {
 			return fmt.Errorf("reading value: %w", err)
 		}
@@ -82,9 +82,9 @@ var keyRotateCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		fmt.Fprintf(os.Stderr, "new value: ")
+		_, _ = fmt.Fprintf(os.Stderr, "new value: ") //TODO log error
 		value, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
+		_, _ = fmt.Fprintln(os.Stderr) //TODO log error
 		if err != nil {
 			return fmt.Errorf("reading value: %w", err)
 		}

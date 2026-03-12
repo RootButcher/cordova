@@ -202,10 +202,9 @@ func (v *Vault) Seal(state *State, passphrase []byte) error {
 		return fmt.Errorf("writing vault tmp file: %w", err)
 	}
 	if err := os.Rename(tmp, v.path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp) //TODO report error here to log as error
 		return fmt.Errorf("renaming vault into place: %w", err)
 	}
-
 	return nil
 }
 

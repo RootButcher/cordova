@@ -131,6 +131,10 @@ func viewKeys(m Model) string {
 		b.WriteString(fmt.Sprintf("value: %s\n\n", valueStyle.Render(m.selectedKeyValue)))
 		b.WriteString(hintStyle.Render("any key to dismiss"))
 		return b.String()
+	case stepNone:
+	case stepTokenName:
+	case stepTokenDesc:
+	case stepTokenCreated:
 	}
 
 	if m.loading {
@@ -184,6 +188,11 @@ func viewTokens(m Model) string {
 		b.WriteString("copy this secret now — it will not be shown again\n")
 		b.WriteString("\n" + hintStyle.Render("any key to continue"))
 		return b.String()
+	case stepNone:
+	case stepKeyName:
+	case stepKeyValue:
+	case stepRotateValue:
+	case stepKeyView:
 	}
 
 	if m.loading {

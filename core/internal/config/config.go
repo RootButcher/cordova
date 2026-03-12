@@ -69,7 +69,9 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening config: %w", err)
 	}
-	defer f.Close()
+	defer func(f *os.File) {
+		_ = f.Close() //TODO log error
+	}(f)
 
 	dec := yaml.NewDecoder(f)
 	dec.KnownFields(true)
@@ -95,14 +97,14 @@ func (c *Config) Save(path string) error {
 	enc := yaml.NewEncoder(f)
 	enc.SetIndent(2)
 	if err := enc.Encode(c); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		_ = f.Close()      //TODO log error
+		_ = os.Remove(tmp) //TODO log error
 		return fmt.Errorf("encoding config: %w", err)
 	}
-	f.Close()
+	_ = f.Close() //TODO log error
 
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp) //TODO log error
 		return fmt.Errorf("saving config: %w", err)
 	}
 
