@@ -3,8 +3,6 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -152,12 +150,8 @@ func runServe(_ *cobra.Command, _ []string) error {
 // startGenRoot creates a temporary unrestricted socket and an ephemeral token
 // on the root user, printing both to stderr for the operator.
 func startGenRoot(srv *socket.Server, userStore *store.UserStore, c config.CordovaConfig) error {
-	rawID := make([]byte, 4)
-	if _, err := rand.Read(rawID); err != nil {
-		return fmt.Errorf("generating gen-root socket id: %w", err)
-	}
 	socketDir := dirOf(c.Audit.LogPath)
-	socketPath := socketDir + "/root-" + hex.EncodeToString(rawID) + ".sock"
+	socketPath := socketDir + "/root.sock"
 
 	const tokenName = "gen-root"
 	secret, err := userStore.AddToken("root", tokenName, "ephemeral root token", vault.EphemeralExpiry())

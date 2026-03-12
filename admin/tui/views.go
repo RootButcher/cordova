@@ -34,6 +34,45 @@ var (
 	valueStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
 )
 
+// viewPermListScreen renders a cursor-navigable permission toggle list.
+func viewPermListScreen(title string, items []permItem, cursor int, hint string) string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(title) + "\n\n")
+	for i, item := range items {
+		selected := i == cursor
+		var line string
+		switch item.kind {
+		case permBoolToggle:
+			check := "[ ]"
+			if item.on {
+				check = "[x]"
+			}
+			line = check + " " + item.key
+		case permListEntry:
+			line = "x  " + item.value
+			if item.dim && !selected {
+				b.WriteString("  " + dimStyle.Render(line) + "\n")
+				continue
+			}
+		case permAddAction:
+			line = "+ " + item.value
+			if item.dim || !selected {
+				b.WriteString("  " + dimStyle.Render(line) + "\n")
+				continue
+			}
+		case permDone:
+			line = "✓ done"
+		}
+		if selected {
+			b.WriteString(selectedStyle.Render("> "+line) + "\n")
+		} else {
+			b.WriteString("  " + line + "\n")
+		}
+	}
+	b.WriteString("\n" + hintStyle.Render(hint))
+	return b.String()
+}
+
 // ── View ──────────────────────────────────────────────────────────────────────
 
 func (m Model) View() string {
@@ -54,6 +93,10 @@ func (m Model) View() string {
 		screen.WriteString(viewTokens(m))
 	case screenStatus:
 		screen.WriteString(viewStatus(m))
+	case screenUsers:
+		screen.WriteString(viewUsers(m))
+	case screenSockets:
+		screen.WriteString(viewSockets(m))
 	}
 	if m.err != "" {
 		screen.WriteString("\n" + errStyle.Render("error: "+m.err))
@@ -96,7 +139,7 @@ func viewAuth(m Model) string {
 func viewMenu(m Model) string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Cordova Admin") + "\n\n")
-	items := []string{"Keys", "Tokens", "Admin"}
+	items := []string{"Keys", "Tokens", "Users", "Admin"}
 	for i, item := range items {
 		if i == m.menuCursor {
 			b.WriteString(selectedStyle.Render("> " + item))
@@ -138,7 +181,9 @@ func viewKeys(m Model) string {
 		b.WriteString(fmt.Sprintf("value: %s\n\n", valueStyle.Render(m.selectedKeyValue)))
 		b.WriteString(hintStyle.Render("any key to dismiss"))
 		return b.String()
-	case stepNone, stepTokenUser, stepTokenName, stepTokenDesc, stepTokenCreated, stepAuthUser:
+	case stepNone, stepTokenUser, stepTokenName, stepTokenDesc, stepTokenCreated, stepAuthUser,
+		stepUserName, stepUserParent, stepSocketName, stepSocketPath,
+		stepUserPerms, stepSocketScope, stepPermInput:
 	}
 
 	if m.loading {
@@ -193,7 +238,9 @@ func viewTokens(m Model) string {
 		b.WriteString("copy this secret now — it will not be shown again\n")
 		b.WriteString("\n" + hintStyle.Render("any key to continue"))
 		return b.String()
-	case stepNone, stepKeyName, stepKeyValue, stepRotateValue, stepKeyView, stepAuthUser:
+	case stepNone, stepKeyName, stepKeyValue, stepRotateValue, stepKeyView, stepAuthUser,
+		stepUserName, stepUserParent, stepSocketName, stepSocketPath,
+		stepUserPerms, stepSocketScope, stepPermInput:
 	}
 
 	if m.loading {
@@ -237,6 +284,139 @@ func viewStatus(m Model) string {
 		b.WriteString(fmt.Sprintf("version: %s\n", m.status.Version))
 	}
 
-	b.WriteString("\n" + hintStyle.Render("s seal vault  esc back  q quit"))
+	b.WriteString("\n" + hintStyle.Render("s seal vault  m sockets  esc back  q quit"))
+	return b.String()
+}
+
+// viewUsers renders the user tree list and management screen.
+func viewUsers(m Model) string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Users") + "\n\n")
+
+	switch m.step {
+	case stepUserName:
+		b.WriteString("username (slug)\n")
+		b.WriteString(m.input.View() + "\n")
+		b.WriteString(hintStyle.Render("enter confirm  esc cancel"))
+		return b.String()
+	case stepUserParent:
+		b.WriteString(fmt.Sprintf("parent user for %q\n", m.inputBuffer["name"]))
+		b.WriteString(m.input.View() + "\n")
+		b.WriteString(hintStyle.Render("enter confirm  esc cancel"))
+		return b.String()
+	case stepConfirm:
+		b.WriteString(fmt.Sprintf("delete %q?  ", m.confirmTarget))
+		b.WriteString(hintStyle.Render("y confirm  any other key cancel"))
+		return b.String()
+	case stepUserPerms:
+		return viewPermListScreen("User Permissions", buildUserPermItems(m), m.permCursor,
+			"↑/↓ navigate  space toggle/remove  enter add/confirm  esc cancel")
+	case stepPermInput:
+		if m.inputBuffer["permScreen"] != "socket" {
+			b.WriteString(fmt.Sprintf("add %s value\n", m.inputBuffer["permField"]))
+			b.WriteString(m.input.View() + "\n")
+			b.WriteString(hintStyle.Render("enter confirm  esc back"))
+			return b.String()
+		}
+	case stepNone, stepKeyName, stepKeyValue, stepRotateValue, stepKeyView,
+		stepTokenUser, stepTokenName, stepTokenDesc, stepTokenCreated, stepAuthUser,
+		stepSocketName, stepSocketPath, stepSocketScope:
+	}
+
+	if m.loading {
+		b.WriteString(dimStyle.Render("loading..."))
+		return b.String()
+	}
+
+	if len(m.users) == 0 {
+		b.WriteString(dimStyle.Render("no users"))
+	} else {
+		for i, u := range m.users {
+			admin := ""
+			if u.Admin {
+				admin = "  [admin]"
+			}
+			parent := u.Parent
+			if parent == "" {
+				parent = "—"
+			}
+			line := fmt.Sprintf("%-16s  (parent: %-12s)%s  %d tokens",
+				u.Name, parent, admin, u.TokenCount)
+			if i == m.userCursor {
+				b.WriteString(selectedStyle.Render("> " + line))
+			} else {
+				b.WriteString("  " + line)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n" + hintStyle.Render("↑/↓ navigate  a add user  t add token  d delete  esc back"))
+	return b.String()
+}
+
+// viewSockets renders the socket list and management screen.
+func viewSockets(m Model) string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Sockets") + "\n\n")
+
+	switch m.step {
+	case stepSocketName:
+		b.WriteString("socket name (slug)\n")
+		b.WriteString(m.input.View() + "\n")
+		b.WriteString(hintStyle.Render("enter confirm  esc cancel"))
+		return b.String()
+	case stepSocketPath:
+		b.WriteString(fmt.Sprintf("path for socket %q\n", m.inputBuffer["name"]))
+		b.WriteString(m.input.View() + "\n")
+		b.WriteString(hintStyle.Render("enter confirm  esc cancel"))
+		return b.String()
+	case stepConfirm:
+		b.WriteString(fmt.Sprintf("delete %q?  ", m.confirmTarget))
+		b.WriteString(hintStyle.Render("y confirm  any other key cancel"))
+		return b.String()
+	case stepSocketScope:
+		return viewPermListScreen("Socket Scope", buildSocketScopeItems(m), m.permCursor,
+			"↑/↓ navigate  space toggle/remove  enter add/confirm  esc cancel")
+	case stepPermInput:
+		if m.inputBuffer["permScreen"] == "socket" {
+			b.WriteString(fmt.Sprintf("add %s value\n", m.inputBuffer["permField"]))
+			b.WriteString(m.input.View() + "\n")
+			b.WriteString(hintStyle.Render("enter confirm  esc back"))
+			return b.String()
+		}
+	case stepNone, stepKeyName, stepKeyValue, stepRotateValue, stepKeyView,
+		stepTokenUser, stepTokenName, stepTokenDesc, stepTokenCreated, stepAuthUser,
+		stepUserName, stepUserParent, stepUserPerms:
+	}
+
+	if m.loading {
+		b.WriteString(dimStyle.Render("loading..."))
+		return b.String()
+	}
+
+	if len(m.sockets) == 0 {
+		b.WriteString(dimStyle.Render("no sockets configured"))
+	} else {
+		for i, s := range m.sockets {
+			scope := "scoped"
+			if s.Scope.Unrestricted {
+				scope = "unrestricted"
+			}
+			live := ""
+			if s.Live {
+				live = "  [live]"
+			}
+			line := fmt.Sprintf("%-16s  %-40s  [%s]%s", s.Name, s.Path, scope, live)
+			if i == m.socketCursor {
+				b.WriteString(selectedStyle.Render("> " + line))
+			} else {
+				b.WriteString("  " + line)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n" + hintStyle.Render("↑/↓ navigate  a add  d delete  esc back"))
 	return b.String()
 }
