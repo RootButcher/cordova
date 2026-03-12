@@ -37,7 +37,6 @@ var (
 // ── View ──────────────────────────────────────────────────────────────────────
 
 func (m Model) View() string {
-
 	innerWidth := m.width - 2
 	if innerWidth < 40 {
 		innerWidth = 78
@@ -67,6 +66,7 @@ func (m Model) View() string {
 
 	return borderStyle.Width(innerWidth).Render(b.String())
 }
+
 func viewAuth(m Model) string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Authentication") + "\n\n")
@@ -74,16 +74,28 @@ func viewAuth(m Model) string {
 		b.WriteString(dimStyle.Render("connecting..."))
 		return b.String()
 	}
-	b.WriteString("Enter your token to continue.\n\n")
+	if m.step == stepAuthUser {
+		b.WriteString("Enter your username.\n\n")
+		b.WriteString(m.input.View() + "\n")
+		b.WriteString("\n" + hintStyle.Render("enter confirm  ctrl+c quit"))
+		return b.String()
+	}
+	if m.inputBuffer["awaitingToken"] == "1" {
+		b.WriteString(fmt.Sprintf("User: %s\n\n", m.authUsername))
+		b.WriteString("Enter your token.\n\n")
+		b.WriteString(m.input.View() + "\n")
+		b.WriteString("\n" + hintStyle.Render("enter confirm  ctrl+c quit"))
+		return b.String()
+	}
+	b.WriteString("Enter your username to continue.\n\n")
 	b.WriteString(m.input.View() + "\n")
 	b.WriteString("\n" + hintStyle.Render("enter confirm  ctrl+c quit"))
 	return b.String()
 }
+
 func viewMenu(m Model) string {
 	var b strings.Builder
-
 	b.WriteString(titleStyle.Render("Cordova Admin") + "\n\n")
-
 	items := []string{"Keys", "Tokens", "Admin"}
 	for i, item := range items {
 		if i == m.menuCursor {
@@ -93,13 +105,12 @@ func viewMenu(m Model) string {
 		}
 		b.WriteString("\n")
 	}
-
 	b.WriteString("\n" + hintStyle.Render("↑/↓ navigate  enter select  q quit"))
 	return b.String()
 }
+
 func viewKeys(m Model) string {
 	var b strings.Builder
-
 	b.WriteString(titleStyle.Render("Keys") + "\n\n")
 	switch m.step {
 	case stepKeyName:
@@ -107,34 +118,27 @@ func viewKeys(m Model) string {
 		b.WriteString(m.input.View() + "\n")
 		b.WriteString(hintStyle.Render("enter confirm  esc cancel"))
 		return b.String()
-
 	case stepKeyValue:
 		b.WriteString(fmt.Sprintf("value for %q\n", m.inputBuffer["name"]))
 		b.WriteString(m.input.View() + "\n")
 		b.WriteString(hintStyle.Render("enter confirm  esc cancel"))
 		return b.String()
-
 	case stepRotateValue:
 		b.WriteString(fmt.Sprintf("new value for %q\n", m.inputBuffer["name"]))
 		b.WriteString(m.input.View() + "\n")
 		b.WriteString(hintStyle.Render("enter confirm  esc cancel"))
 		return b.String()
-
 	case stepConfirm:
 		b.WriteString(fmt.Sprintf("delete %q?  ", m.confirmTarget))
 		b.WriteString(hintStyle.Render("y confirm  any other key cancel"))
 		return b.String()
-
 	case stepKeyView:
 		name := m.keys[m.keyCursor]
 		b.WriteString(fmt.Sprintf("key:   %s\n", name))
 		b.WriteString(fmt.Sprintf("value: %s\n\n", valueStyle.Render(m.selectedKeyValue)))
 		b.WriteString(hintStyle.Render("any key to dismiss"))
 		return b.String()
-	case stepNone:
-	case stepTokenName:
-	case stepTokenDesc:
-	case stepTokenCreated:
+	case stepNone, stepTokenUser, stepTokenName, stepTokenDesc, stepTokenCreated, stepAuthUser:
 	}
 
 	if m.loading {
@@ -161,38 +165,35 @@ func viewKeys(m Model) string {
 
 func viewTokens(m Model) string {
 	var b strings.Builder
-
 	b.WriteString(titleStyle.Render("Tokens") + "\n\n")
 
 	switch m.step {
-	case stepTokenName:
-		b.WriteString("token name (slug: lowercase letters, digits, hyphens)\n")
+	case stepTokenUser:
+		b.WriteString("username for new token\n")
 		b.WriteString(m.input.View() + "\n")
 		b.WriteString(hintStyle.Render("enter confirm  esc cancel"))
 		return b.String()
-
+	case stepTokenName:
+		b.WriteString(fmt.Sprintf("token name for user %q\n", m.inputBuffer["username"]))
+		b.WriteString(m.input.View() + "\n")
+		b.WriteString(hintStyle.Render("enter confirm  esc cancel"))
+		return b.String()
 	case stepTokenDesc:
 		b.WriteString(fmt.Sprintf("description for %q\n", m.inputBuffer["name"]))
 		b.WriteString(m.input.View() + "\n")
 		b.WriteString(hintStyle.Render("enter confirm  esc cancel"))
 		return b.String()
-
 	case stepConfirm:
 		b.WriteString(fmt.Sprintf("revoke %q?  ", m.confirmTarget))
 		b.WriteString(hintStyle.Render("y confirm  any other key cancel"))
 		return b.String()
-
 	case stepTokenCreated:
-		b.WriteString("token created\n\n")
+		b.WriteString(fmt.Sprintf("token created for user %q\n\n", m.newTokenUsername))
 		b.WriteString(tokenStyle.Render(m.newToken) + "\n\n")
 		b.WriteString("copy this secret now — it will not be shown again\n")
 		b.WriteString("\n" + hintStyle.Render("any key to continue"))
 		return b.String()
-	case stepNone:
-	case stepKeyName:
-	case stepKeyValue:
-	case stepRotateValue:
-	case stepKeyView:
+	case stepNone, stepKeyName, stepKeyValue, stepRotateValue, stepKeyView, stepAuthUser:
 	}
 
 	if m.loading {
@@ -204,7 +205,7 @@ func viewTokens(m Model) string {
 		b.WriteString(dimStyle.Render("no tokens stored"))
 	} else {
 		for i, t := range m.tokens {
-			line := fmt.Sprintf("%-20s  %-8s  %s", t.Name, t.Role, t.Description)
+			line := fmt.Sprintf("%-12s  %-20s  %s", t.Username, t.Name, t.Description)
 			if i == m.tokenCursor {
 				b.WriteString(selectedStyle.Render("> " + line))
 			} else {
@@ -214,13 +215,12 @@ func viewTokens(m Model) string {
 		}
 	}
 
-	b.WriteString("\n" + hintStyle.Render("↑/↓ navigate  a add admin token  d revoke  esc back"))
+	b.WriteString("\n" + hintStyle.Render("↑/↓ navigate  a add token  d revoke  esc back"))
 	return b.String()
 }
 
 func viewStatus(m Model) string {
 	var b strings.Builder
-
 	b.WriteString(titleStyle.Render("Admin") + "\n\n")
 
 	if m.loading {

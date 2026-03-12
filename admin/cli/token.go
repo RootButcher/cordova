@@ -30,19 +30,23 @@ func init() {
 
 var (
 	nameFlag      string
-	adminFlag     bool
+	tokenUserFlag string
 	ephemeralFlag bool
 	ttlFlag       string
 )
+
 var tokenCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a new token (--admin for full access, --ephemeral, --ttl <duration>)",
+	Short: "Create a new token for a user (--user required)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if ephemeralFlag && ttlFlag != "" {
 			return fmt.Errorf("--ephemeral and --ttl are mutually exclusive")
 		}
 		if nameFlag == "" {
 			return fmt.Errorf("--name is required")
+		}
+		if tokenUserFlag == "" {
+			return fmt.Errorf("--user is required")
 		}
 
 		scanner := bufio.NewScanner(os.Stdin)
@@ -52,11 +56,6 @@ var tokenCreateCmd = &cobra.Command{
 		description := strings.TrimSpace(scanner.Text())
 		if description == "" {
 			return fmt.Errorf("description is required")
-		}
-
-		role := "access"
-		if adminFlag {
-			role = "admin"
 		}
 
 		expiresAt := "" // empty = persistent
@@ -74,40 +73,10 @@ var tokenCreateCmd = &cobra.Command{
 		}
 
 		params := ipc.TokenAddParams{
+			Username:    tokenUserFlag,
 			Name:        nameFlag,
 			Description: description,
-			Role:        role,
 			ExpiresAt:   expiresAt,
-		}
-
-		if role == "access" {
-			fmt.Print("CIDRs (comma-separated, e.g. 10.0.0.1/32): ")
-			scanner.Scan()
-			cidrRaw := strings.TrimSpace(scanner.Text())
-			if cidrRaw == "" {
-				return fmt.Errorf("at least one CIDR is required for access tokens")
-			}
-			params.CIDRs = splitTrim(cidrRaw, ",")
-
-			fmt.Print("namespaces (comma-separated, or blank): ")
-			scanner.Scan()
-			if ns := strings.TrimSpace(scanner.Text()); ns != "" {
-				params.Namespaces = splitTrim(ns, ",")
-			}
-
-			fmt.Print("explicit keys (comma-separated, or blank): ")
-			scanner.Scan()
-			if ks := strings.TrimSpace(scanner.Text()); ks != "" {
-				params.Keys = splitTrim(ks, ",")
-			}
-
-			if len(params.Namespaces) == 0 && len(params.Keys) == 0 {
-				return fmt.Errorf("access token must have at least one namespace or key")
-			}
-
-			fmt.Print("writable? [y/N]: ")
-			scanner.Scan()
-			params.Writable = strings.ToLower(strings.TrimSpace(scanner.Text())) == "y"
 		}
 
 		resp, err := Client.Send(ipc.CmdTokenAdd, params)
@@ -123,11 +92,11 @@ var tokenCreateCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("name:       %s\n", d.Name)
-		fmt.Printf("secret:     %s\n", d.Secret)
-		fmt.Printf("role:       %s\n", d.Role)
+		fmt.Printf("user:    %s\n", d.Username)
+		fmt.Printf("name:    %s\n", d.Name)
+		fmt.Printf("secret:  %s\n", d.Secret)
 		if d.ExpiresAt != "" {
-			fmt.Printf("expires-at: %s\n", d.ExpiresAt)
+			fmt.Printf("expires: %s\n", d.ExpiresAt)
 		}
 		fmt.Println("copy the secret now — it will not be shown again")
 		return nil
@@ -135,15 +104,15 @@ var tokenCreateCmd = &cobra.Command{
 }
 
 func init() {
-	tokenCreateCmd.Flags().StringVar(&nameFlag, "name", "", "unique slug name for the token, e.g. ops-box (required)")
-	tokenCreateCmd.Flags().BoolVar(&adminFlag, "admin", false, "create an admin-role token with full vault access")
+	tokenCreateCmd.Flags().StringVar(&nameFlag, "name", "", "unique slug name for the token (required)")
+	tokenCreateCmd.Flags().StringVar(&tokenUserFlag, "user", "", "username to create the token under (required)")
 	tokenCreateCmd.Flags().BoolVar(&ephemeralFlag, "ephemeral", false, "process-scoped token, never written to disk")
-	tokenCreateCmd.Flags().StringVar(&ttlFlag, "ttl", "", "time-to-live for the token, e.g. 24h or 30m")
+	tokenCreateCmd.Flags().StringVar(&ttlFlag, "ttl", "", "time-to-live, e.g. 24h or 30m")
 }
 
 var tokenListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all tokens",
+	Short: "List all tokens across all users",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		resp, err := Client.Send(ipc.CmdTokenList, nil)
 		if err != nil {
@@ -162,7 +131,7 @@ var tokenListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		_, _ = fmt.Fprintln(w, "NAME\tROLE\tDESCRIPTION\tCREATED\tLAST USED") //TODO log error
+		_, _ = fmt.Fprintln(w, "USER\tNAME\tDESCRIPTION\tEXPIRES\tCREATED\tLAST USED")
 		for _, t := range d.Tokens {
 			lastUsed := "never"
 			if t.LastUsed != "" {
@@ -174,58 +143,81 @@ var tokenListCmd = &cobra.Command{
 			if ts, err := time.Parse(time.RFC3339, t.CreatedAt); err == nil {
 				created = ts.Format("2006-01-02")
 			}
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				t.Name, t.Role, t.Description, created, lastUsed) //TODO log error
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				t.Username, t.Name, t.Description, t.ExpiresAt, created, lastUsed)
 		}
-		_ = w.Flush() //TODO log error
+		_ = w.Flush()
 		return nil
 	},
 }
 
-// tokenRevokeCmd removes a single token by its name.
+// tokenRevokeCmd removes a single token by its username and name.
 var tokenRevokeCmd = &cobra.Command{
-	Use:   "revoke <name>",
-	Short: "Revoke a token by name",
+	Use:   "revoke --user <username> <name>",
+	Short: "Revoke a token by user and name",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := Client.Send(ipc.CmdTokenRevoke, ipc.TokenRevokeParams{Name: args[0]})
+		user, _ := cmd.Flags().GetString("user")
+		if user == "" {
+			return fmt.Errorf("--user is required")
+		}
+		resp, err := Client.Send(ipc.CmdTokenRevoke, ipc.TokenRevokeParams{
+			Username: user,
+			Name:     args[0],
+		})
 		if err != nil {
 			return err
 		}
 		if !resp.OK {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		fmt.Printf("revoked %s\n", args[0])
+		fmt.Printf("revoked %s/%s\n", user, args[0])
 		return nil
 	},
 }
 
-// tokenRevokeAllCmd removes every persistent token after typing YES to confirm.
+func init() {
+	tokenRevokeCmd.Flags().String("user", "", "username that owns the token (required)")
+}
+
+// tokenRevokeAllCmd removes every token (optionally for a specific user).
 var tokenRevokeAllCmd = &cobra.Command{
 	Use:   "revoke-all",
-	Short: "Revoke all tokens (type YES to confirm)",
+	Short: "Revoke all tokens (type YES to confirm; --user to target one user)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Print("type YES to revoke all tokens: ")
+		user, _ := cmd.Flags().GetString("user")
+
+		if user != "" {
+			fmt.Printf("type YES to revoke all tokens for user %q: ", user)
+		} else {
+			fmt.Print("type YES to revoke ALL tokens for ALL users: ")
+		}
+
 		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Scan()
 		if strings.TrimSpace(scanner.Text()) != "YES" {
 			fmt.Println("aborted")
 			return nil
 		}
-		resp, err := Client.Send(ipc.CmdTokenRevokeAll, nil)
+
+		resp, err := Client.Send(ipc.CmdTokenRevokeAll, ipc.TokenRevokeAllParams{Username: user})
 		if err != nil {
 			return err
 		}
 		if !resp.OK {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		fmt.Println("all tokens revoked")
+		fmt.Println("tokens revoked")
 		return nil
 	},
 }
 
-// splitTrim splits s on sep, trims whitespace from each part, and drops
-// empty entries. Used to parse comma-separated CLI inputs like CIDR lists.
+func init() {
+	tokenRevokeAllCmd.Flags().String("user", "", "limit revocation to one user (optional)")
+}
+
+// splitTrim splits s on sep, trims whitespace from each part, and drops empty
+// entries. Used to parse comma-separated CLI inputs.
 func splitTrim(s, sep string) []string {
 	parts := strings.Split(s, sep)
 	out := make([]string, 0, len(parts))

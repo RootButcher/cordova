@@ -9,17 +9,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Config is the top-level configuration structure.
 type Config struct {
 	Cordova CordovaConfig `yaml:"cordova"`
 }
 
+// CordovaConfig holds all daemon configuration.
 type CordovaConfig struct {
-	RootSocket string      `yaml:"root_socket"`
-	USB        USBConfig   `yaml:"usb"`
-	Audit      AuditConfig `yaml:"audit"`
-	KDF        KDFConfig   `yaml:"kdf"`
+	SocketsConfig string      `yaml:"sockets_config"`
+	UsersFilename string      `yaml:"users_filename"`
+	USB           USBConfig   `yaml:"usb"`
+	Audit         AuditConfig `yaml:"audit"`
+	KDF           KDFConfig   `yaml:"kdf"`
 }
 
+// USBConfig describes the vault media (USB drive or mount point).
 type USBConfig struct {
 	PrimaryLabel  string `yaml:"primary_label"`
 	BackupLabel   string `yaml:"backup_label"`
@@ -27,22 +31,25 @@ type USBConfig struct {
 	VaultFilename string `yaml:"vault_filename"`
 }
 
+// AuditConfig controls audit log behaviour.
 type AuditConfig struct {
 	LogPath   string `yaml:"log_path"`
 	MaxSizeMB int    `yaml:"max_size_mb"`
 }
 
+// KDFConfig holds Argon2id parameters.
 type KDFConfig struct {
 	Time    uint32 `yaml:"argon2id_time"`
 	Memory  uint32 `yaml:"argon2id_memory"`
 	Threads uint8  `yaml:"argon2id_threads"`
 }
 
-// TODO make default an embedded .yaml file
+// Defaults returns a Config populated with safe production defaults.
 func Defaults() *Config {
 	return &Config{
 		Cordova: CordovaConfig{
-			RootSocket: "/run/cordova/cordova.sock",
+			SocketsConfig: "",
+			UsersFilename: "cordova.users",
 			USB: USBConfig{
 				PrimaryLabel:  "CORDOVA-KEYS",
 				BackupLabel:   "CORDOVA-BACKUP",
@@ -62,6 +69,7 @@ func Defaults() *Config {
 	}
 }
 
+// Load parses the YAML file at path over the defaults.
 func Load(path string) (*Config, error) {
 	cfg := Defaults()
 
@@ -70,7 +78,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("opening config: %w", err)
 	}
 	defer func(f *os.File) {
-		_ = f.Close() //TODO log error
+		_ = f.Close()
 	}(f)
 
 	dec := yaml.NewDecoder(f)
@@ -86,6 +94,7 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// Save atomically writes the config to path.
 func (c *Config) Save(path string) error {
 	tmp := path + ".tmp"
 
@@ -97,23 +106,24 @@ func (c *Config) Save(path string) error {
 	enc := yaml.NewEncoder(f)
 	enc.SetIndent(2)
 	if err := enc.Encode(c); err != nil {
-		_ = f.Close()      //TODO log error
-		_ = os.Remove(tmp) //TODO log error
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return fmt.Errorf("encoding config: %w", err)
 	}
-	_ = f.Close() //TODO log error
+	_ = f.Close()
 
 	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp) //TODO log error
+		_ = os.Remove(tmp)
 		return fmt.Errorf("saving config: %w", err)
 	}
 
 	return nil
 }
 
+// Validate checks that required config fields are set.
 func (c *Config) Validate() error {
-	if c.Cordova.RootSocket == "" {
-		return fmt.Errorf("root_socket is required")
+	if c.Cordova.UsersFilename == "" {
+		return fmt.Errorf("users_filename is required")
 	}
 	return nil
 }

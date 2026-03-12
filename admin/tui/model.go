@@ -18,7 +18,7 @@ import (
 type screen int
 
 const (
-	screenAuth   screen = iota // token entry — shown when no token is pre-supplied
+	screenAuth   screen = iota // username + token entry
 	screenMenu                 // main navigation menu
 	screenKeys                 // key list and management
 	screenTokens               // token list and management
@@ -29,10 +29,12 @@ type inputStep int
 
 const (
 	stepNone         inputStep = iota // no form active
+	stepAuthUser                      // entering username on auth screen
 	stepKeyName                       // entering namespace/name for a new key
 	stepKeyValue                      // entering value for a new key (hidden)
 	stepRotateValue                   // entering new value for key rotation (hidden)
 	stepConfirm                       // y/n confirmation prompt
+	stepTokenUser                     // entering username for a new token
 	stepTokenName                     // entering the slug name for a new token
 	stepTokenDesc                     // entering description for a new token
 	stepTokenCreated                  // displaying the newly created token secret
@@ -72,17 +74,17 @@ type actionDoneMsg struct {
 }
 
 type tokenCreatedMsg struct {
-	name   string
-	secret string
-	role   string
-	err    error
+	username string
+	name     string
+	secret   string
+	err      error
 }
 
 // ── Commands (async IPC calls) ─────────────────────────────────────────────────
 
-func probeClient(socketPath, token string) tea.Cmd {
+func probeClient(socketPath, username, token string) tea.Cmd {
 	return func() tea.Msg {
-		c := client.New(socketPath, token)
+		c := client.New(socketPath, username, token)
 		if err := c.Probe(); err != nil {
 			return authDoneMsg{err: err}
 		}
@@ -109,7 +111,7 @@ func loadKeys(c *client.Client) tea.Cmd {
 	}
 }
 
-// loadTokens fetches all persistent tokens from the daemon.
+// loadTokens fetches all tokens from the daemon.
 func loadTokens(c *client.Client) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := c.Send(ipc.CmdTokenList, nil)
@@ -191,15 +193,13 @@ func setKey(c *client.Client, name, value string) tea.Cmd {
 	}
 }
 
-// createAdminToken creates a new persistent admin-role token with the given
-// name and description. ExpiresAt is left empty (persistent). Ephemeral and
-// TTL tokens can be created via the CLI with --ephemeral or --ttl.
-func createAdminToken(c *client.Client, name, description string) tea.Cmd {
+// createToken creates a new persistent token for the given user.
+func createToken(c *client.Client, username, name, description string) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := c.Send(ipc.CmdTokenAdd, ipc.TokenAddParams{
+			Username:    username,
 			Name:        name,
 			Description: description,
-			Role:        "admin",
 			ExpiresAt:   "", // persistent
 		})
 		if err != nil {
@@ -212,14 +212,17 @@ func createAdminToken(c *client.Client, name, description string) tea.Cmd {
 		if err := json.Unmarshal(resp.Data, &d); err != nil {
 			return tokenCreatedMsg{err: err}
 		}
-		return tokenCreatedMsg{name: d.Name, secret: d.Secret, role: d.Role}
+		return tokenCreatedMsg{username: d.Username, name: d.Name, secret: d.Secret}
 	}
 }
 
-// revokeToken removes a single token by name.
-func revokeToken(c *client.Client, name string) tea.Cmd {
+// revokeToken removes a single token by username and name.
+func revokeToken(c *client.Client, username, name string) tea.Cmd {
 	return func() tea.Msg {
-		resp, err := c.Send(ipc.CmdTokenRevoke, ipc.TokenRevokeParams{Name: name})
+		resp, err := c.Send(ipc.CmdTokenRevoke, ipc.TokenRevokeParams{
+			Username: username,
+			Name:     name,
+		})
 		if err != nil {
 			return actionDoneMsg{err: err}
 		}
@@ -246,78 +249,44 @@ func sealVault(c *client.Client) tea.Cmd {
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 
-// Model is the single source of truth for all TUI state. bubbletea passes it
-// by value through Update, so every field is a value type or pointer.
+// Model is the single source of truth for all TUI state.
 type Model struct {
-	// socketPath is the filesystem path of the cordova-vault Unix socket.
-	// Stored here so the auth screen can create the client after token entry.
 	socketPath string
-
-	// client is the shared IPC connection used by all async commands.
-	// It is nil until the user authenticates on screenAuth.
-	client *client.Client
-
-	// width is the current terminal width, updated on tea.WindowSizeMsg.
-	// Used to scale the banner and border to fill the terminal.
-	width int
-
-	// screen is the currently displayed view.
-	screen screen
-
-	// menuCursor is the selected item index on the main menu.
+	client     *client.Client
+	width      int
+	screen     screen
 	menuCursor int
 
-	// keys is the list of key names displayed on the keys screen.
-	keys []string
-
-	// keyCursor is the selected key index on the keys screen.
+	keys      []string
 	keyCursor int
 
-	// tokens is the list of token summaries on the tokens screen.
-	tokens []ipc.TokenSummary
-
-	// tokenCursor is the selected token index on the tokens screen.
+	tokens      []ipc.TokenSummary
 	tokenCursor int
 
-	// status holds the latest daemon status response.
-	status *ipc.StatusData
-
-	// loading is true while an async IPC call is in flight.
+	status  *ipc.StatusData
 	loading bool
 
-	// step tracks the current field being collected in a multi-step form.
-	step inputStep
-
-	// input is the active text input widget (name, value, description, etc.).
-	input textinput.Model
-
-	// inputBuffer stores values collected in earlier form steps, keyed by
-	// field name (e.g. "name", "value").
+	step        inputStep
+	input       textinput.Model
 	inputBuffer map[string]string
 
-	// confirmTarget is the item name or ID targeted by a pending confirmation.
-	confirmTarget string
+	confirmTarget  string
+	confirmAction  tea.Cmd
 
-	// confirmAction is the IPC command to execute if the user confirms.
-	confirmAction tea.Cmd
-
-	// newToken holds the one-time secret of a just-created token for display.
-	// Cleared when the user dismisses the stepTokenCreated screen.
-	newToken string
-
-	// selectedKeyValue holds the plaintext value of the key currently being
-	// viewed. Cleared when the user dismisses the stepKeyView screen.
+	newToken         string
+	newTokenUsername string
 	selectedKeyValue string
 
-	// err is a transient error message shown at the bottom of the screen.
-	// Cleared on the next keypress.
 	err string
+
+	// authUsername holds the username entered on the auth screen before the
+	// token step begins.
+	authUsername string
 }
 
-// initialModel builds the starting Model. If token is non-empty a client is
-// created immediately and the menu is shown. If token is empty the auth screen
-// is shown so the user can supply one interactively.
-func initialModel(socketPath, token string) Model {
+// initialModel builds the starting Model. If both username and token are
+// non-empty a client is created immediately and the menu is shown.
+func initialModel(socketPath, username, token string) Model {
 	ti := textinput.New()
 	ti.CharLimit = 256
 
@@ -328,14 +297,15 @@ func initialModel(socketPath, token string) Model {
 		inputBuffer: make(map[string]string),
 	}
 
-	if token != "" {
-		m.client = client.New(socketPath, token)
+	if username != "" && token != "" {
+		m.client = client.New(socketPath, username, token)
+		m.authUsername = username
 		m.screen = screenMenu
 	} else {
-		// Auth screen: configure the input for hidden token entry and focus it
-		// immediately so the user can start typing without an extra keypress.
-		m.input.Placeholder = "token"
-		m.input.EchoMode = textinput.EchoPassword
+		// Show username input first.
+		m.step = stepAuthUser
+		m.input.Placeholder = "username"
+		m.input.EchoMode = textinput.EchoNormal
 		m.input.Focus()
 	}
 
@@ -344,8 +314,7 @@ func initialModel(socketPath, token string) Model {
 
 // ── bubbletea interface ────────────────────────────────────────────────────────
 
-// Init is called once at startup. On the auth screen we just blink the cursor;
-// on the menu we immediately fetch vault status.
+// Init is called once at startup.
 func (m Model) Init() tea.Cmd {
 	if m.screen == screenAuth {
 		return textinput.Blink
@@ -354,22 +323,16 @@ func (m Model) Init() tea.Cmd {
 }
 
 // Update receives a message and returns the next model and an optional command.
-// It dispatches on the current screen and input step.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Clear transient error on any keypress.
 	if _, ok := msg.(tea.KeyMsg); ok {
 		m.err = ""
 	}
 
 	switch msg := msg.(type) {
 
-	// ── Window resize ─────────────────────────────────────────────────────────
-
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		return m, nil
-
-	// ── Auth ──────────────────────────────────────────────────────────────────
 
 	case authDoneMsg:
 		m.loading = false
@@ -382,8 +345,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = screenMenu
 		m.loading = true
 		return m, loadStatus(m.client)
-
-	// ── IPC responses ────────────────────────────────────────────────────────
 
 	case keysLoadedMsg:
 		m.loading = false
@@ -420,7 +381,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 			return m, nil
 		}
-		// Refresh the current list after a successful mutation.
 		switch m.screen {
 		case screenKeys:
 			m.loading = true
@@ -430,8 +390,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, loadTokens(m.client)
 		case screenStatus:
 			return m, tea.Quit
-		case screenAuth:
-		case screenMenu:
+		case screenAuth, screenMenu:
 		}
 		return m, nil
 
@@ -453,17 +412,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.newToken = msg.secret
+		m.newTokenUsername = msg.username
 		m.step = stepTokenCreated
 		return m, nil
 
-	// ── Keyboard ─────────────────────────────────────────────────────────────
-
 	case tea.KeyMsg:
-		// If a form is active, route to the form handler.
 		if m.step != stepNone {
 			return m.updateForm(msg)
 		}
-		// Otherwise route to the screen handler.
+		// Special case: username was entered, now awaiting token input.
+		if m.inputBuffer["awaitingToken"] == "1" {
+			return m.updateAuthToken(msg)
+		}
 		switch m.screen {
 		case screenAuth:
 			return m.updateAuth(msg)
@@ -483,30 +443,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── Screen update handlers ────────────────────────────────────────────────────
 
-// updateAuth handles keypresses on the token entry screen. The textinput
-// widget receives every keystroke except Enter (submit) and ctrl+c (quit).
 func (m Model) updateAuth(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
-	case "enter":
-		val := strings.TrimSpace(m.input.Value())
-		if val == "" {
-			m.err = "token cannot be empty"
-			return m, nil
-		}
-		// Clear the token from the widget immediately — it is sensitive.
-		m.input.SetValue("")
-		m.input.Blur()
-		m.loading = true
-		return m, probeClient(m.socketPath, val)
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
 }
 
-// updateMenu handles keypresses on the main menu screen.
 func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	const items = 3 // Keys, Tokens, Status
 	switch msg.String() {
@@ -539,7 +485,6 @@ func (m Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateKeys handles keypresses on the keys list screen.
 func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc":
@@ -559,7 +504,6 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, loadKeyValue(m.client, m.keys[m.keyCursor])
 	case "a":
-		// Add key: collect namespace/name then value.
 		m.step = stepKeyName
 		m.input.Placeholder = "namespace/name"
 		m.input.EchoMode = textinput.EchoNormal
@@ -567,7 +511,6 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.Focus()
 		return m, textinput.Blink
 	case "r":
-		// Rotate selected key: collect new value.
 		if len(m.keys) == 0 {
 			return m, nil
 		}
@@ -579,7 +522,6 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.Focus()
 		return m, textinput.Blink
 	case "d":
-		// Delete selected key: confirm first.
 		if len(m.keys) == 0 {
 			return m, nil
 		}
@@ -591,7 +533,6 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateTokens handles keypresses on the tokens list screen.
 func (m Model) updateTokens(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc":
@@ -605,33 +546,30 @@ func (m Model) updateTokens(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.tokenCursor++
 		}
 	case "a":
-		// Create admin token: collect name first, then description.
-		m.step = stepTokenName
-		m.input.Placeholder = "name (e.g. ops-box)"
+		// Start token creation: first collect username.
+		m.step = stepTokenUser
+		m.input.Placeholder = "username (e.g. root)"
 		m.input.EchoMode = textinput.EchoNormal
 		m.input.SetValue("")
 		m.input.Focus()
 		return m, textinput.Blink
 	case "d", "r":
-		// Revoke selected token: confirm first.
 		if len(m.tokens) == 0 {
 			return m, nil
 		}
 		tok := m.tokens[m.tokenCursor]
-		m.confirmTarget = tok.Name
-		m.confirmAction = revokeToken(m.client, tok.Name)
+		m.confirmTarget = tok.Username + "/" + tok.Name
+		m.confirmAction = revokeToken(m.client, tok.Username, tok.Name)
 		m.step = stepConfirm
 	}
 	return m, nil
 }
 
-// updateStatus handles keypresses on the status screen.
 func (m Model) updateStatus(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc":
 		m.screen = screenMenu
 	case "s":
-		// Seal the vault; the actionDoneMsg handler will quit the TUI.
 		m.loading = true
 		return m, sealVault(m.client)
 	}
@@ -642,8 +580,34 @@ func (m Model) updateStatus(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.step {
 
+	case stepAuthUser:
+		// Username entry on auth screen.
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "enter":
+			val := strings.TrimSpace(m.input.Value())
+			if val == "" {
+				m.err = "username cannot be empty"
+				return m, nil
+			}
+			m.authUsername = val
+			m.input.SetValue("")
+			// Switch to token (password) entry.
+			m.input.Placeholder = "token"
+			m.input.EchoMode = textinput.EchoPassword
+			m.input.Focus()
+			m.step = stepNone // handled by updateAuth via token entry below
+			// Reuse stepNone + a flag — actually just use a different approach:
+			// Clear step and set a pending-token flag via inputBuffer.
+			m.inputBuffer["awaitingToken"] = "1"
+			return m, textinput.Blink
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
+
 	case stepConfirm:
-		// Single-keypress confirmation: y confirms, anything else cancels.
 		switch strings.ToLower(msg.String()) {
 		case "y":
 			m.step = stepNone
@@ -655,41 +619,35 @@ func (m Model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case stepKeyView:
-		// Any key dismisses the value display.
 		m.selectedKeyValue = ""
 		m.step = stepNone
 		return m, nil
 
 	case stepTokenCreated:
-		// Any key dismisses the new-token display and refreshes the list.
 		m.newToken = ""
+		m.newTokenUsername = ""
 		m.step = stepNone
 		m.loading = true
 		return m, loadTokens(m.client)
 
 	default:
-		// Text input steps: delegate to the textinput widget then check Enter/Esc.
 		switch msg.String() {
 		case "esc":
 			m.step = stepNone
 			m.inputBuffer = make(map[string]string)
 			m.input.Blur()
 			return m, nil
-
 		case "enter":
 			val := strings.TrimSpace(m.input.Value())
 			return m.advanceForm(val)
 		}
-
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
 	}
 }
 
-// advanceForm is called when Enter is pressed during a text-input form step.
-// It validates the current field value and either advances to the next step or
-// fires the IPC command.
+// advanceForm validates the current field and moves to the next step or fires.
 func (m Model) advanceForm(val string) (tea.Model, tea.Cmd) {
 	switch m.step {
 
@@ -729,6 +687,18 @@ func (m Model) advanceForm(val string) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, setKey(m.client, name, val)
 
+	case stepTokenUser:
+		if err := validate.ValidateUsername(val); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.inputBuffer["username"] = val
+		m.step = stepTokenName
+		m.input.Placeholder = "name (e.g. ops-box)"
+		m.input.EchoMode = textinput.EchoNormal
+		m.input.SetValue("")
+		return m, textinput.Blink
+
 	case stepTokenName:
 		if err := validate.ValidateTokenName(val); err != nil {
 			m.err = err.Error()
@@ -746,29 +716,50 @@ func (m Model) advanceForm(val string) (tea.Model, tea.Cmd) {
 			m.err = "description cannot be empty"
 			return m, nil
 		}
+		username := m.inputBuffer["username"]
 		name := m.inputBuffer["name"]
 		m.step = stepNone
 		m.inputBuffer = make(map[string]string)
 		m.input.Blur()
 		m.loading = true
-		return m, createAdminToken(m.client, name, val)
-	case stepNone:
-	case stepConfirm:
-	case stepTokenCreated:
-	case stepKeyView:
+		return m, createToken(m.client, username, name, val)
+
+	case stepNone, stepConfirm, stepTokenCreated, stepKeyView, stepAuthUser:
 	}
 
 	return m, nil
 }
 
+// ── Auth screen token entry ───────────────────────────────────────────────────
+
+// updateAuthToken is called from updateAuth when awaiting a token after
+// username has been entered.
+func (m Model) updateAuthToken(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "enter":
+		val := strings.TrimSpace(m.input.Value())
+		if val == "" {
+			m.err = "token cannot be empty"
+			return m, nil
+		}
+		m.input.SetValue("")
+		m.input.Blur()
+		delete(m.inputBuffer, "awaitingToken")
+		m.loading = true
+		return m, probeClient(m.socketPath, m.authUsername, val)
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-// Run starts the bubbletea program in alt-screen mode. If token is non-empty
-// the client is created immediately and the menu is shown. If token is empty
-// the auth screen is shown so the user can supply one interactively.
-// Run blocks until the user quits.
-func Run(socketPath, token string) error {
-	p := tea.NewProgram(initialModel(socketPath, token), tea.WithAltScreen())
+// Run starts the bubbletea program in alt-screen mode.
+func Run(socketPath, username, token string) error {
+	p := tea.NewProgram(initialModel(socketPath, username, token), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }

@@ -3,6 +3,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"golang.org/x/term"
 
 	"cordova/core/internal/audit"
+	"cordova/core/internal/config"
 	"cordova/core/internal/socket"
 	"cordova/core/internal/store"
 	"cordova/core/internal/vault"
@@ -22,20 +25,20 @@ var genRoot bool
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Unseal the vault and start the socket server",
-	Long: "Unseals the vault and begins serving requests over the Unix socket.\n" +
-		"Pass --gen-root to emit a one-time root token for initial bootstrapping.",
+	Short: "Unseal both vaults and start the socket server",
+	Long: "Unseals the secrets and users vaults and begins serving requests.\n" +
+		"Pass --gen-root to emit a one-time ephemeral token for the root user.",
 	RunE: runServe,
 }
 
 func init() {
 	serveCmd.Flags().BoolVar(&genRoot, "gen-root", false,
-		"generate a one-time ephemeral root token (for bootstrapping only)")
+		"create a temporary unrestricted socket and ephemeral root token for bootstrapping")
 }
 
-// TODO unused params claude explain
-func runServe(cmd *cobra.Command, args []string) error {
+func runServe(_ *cobra.Command, _ []string) error {
 	c := cfg.Cordova
+
 	if err := os.MkdirAll(dirOf(c.Audit.LogPath), 0700); err != nil {
 		return fmt.Errorf("creating audit log dir: %w", err)
 	}
@@ -43,55 +46,91 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("opening audit log: %w", err)
 	}
-	defer func(auditLog *audit.Logger) {
-		_ = auditLog.Close()
-	}(auditLog)
+	defer func() { _ = auditLog.Close() }()
 
-	if err := os.MkdirAll(dirOf(c.RootSocket), 0700); err != nil {
-		return fmt.Errorf("creating socket dir: %w", err)
+	kdf := vault.KDFParams{Time: c.KDF.Time, Memory: c.KDF.Memory, Threads: c.KDF.Threads}
+
+	secretsVault := vault.NewSecretsVault(
+		vaultFilePath(c.USB.MountBase, c.USB.VaultFilename), kdf)
+	usersVault := vault.NewUsersVault(
+		vaultFilePath(c.USB.MountBase, c.UsersFilename), kdf)
+
+	if !secretsVault.Exists() {
+		return fmt.Errorf("secrets vault not found at %s — run: cordova-vault vault init", secretsVault.Path())
+	}
+	if !usersVault.Exists() {
+		return fmt.Errorf("users vault not found at %s — run: cordova-vault vault init", usersVault.Path())
 	}
 
-	v := vault.New(
-		vaultFilePath(c.USB.MountBase, c.USB.VaultFilename),
-		vault.KDFParams{Time: c.KDF.Time, Memory: c.KDF.Memory, Threads: c.KDF.Threads},
-	)
-	if !v.Exists() {
-		return fmt.Errorf("vault not found at %s — run: cordova-vault vault init", v.Path())
-	}
+	secStore := store.NewSecretsStore()
+	defer secStore.Zero()
+	userStore := store.NewUserStore()
+	defer userStore.Zero()
 
-	s := store.New()
-	defer s.Zero()
-
-	_, _ = fmt.Fprint(os.Stderr, "passphrase: ") //TODO log error
-	passphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
-	_, _ = fmt.Fprintln(os.Stderr) //TODO log error
+	_, _ = fmt.Fprint(os.Stderr, "secrets passphrase: ")
+	secretsPass, err := term.ReadPassword(int(os.Stdin.Fd()))
+	_, _ = fmt.Fprintln(os.Stderr)
 	if err != nil {
-		return fmt.Errorf("reading passphrase: %w", err)
+		return fmt.Errorf("reading secrets passphrase: %w", err)
 	}
 
-	state, err := v.Unseal(passphrase)
+	_, _ = fmt.Fprint(os.Stderr, "users passphrase: ")
+	usersPass, err := term.ReadPassword(int(os.Stdin.Fd()))
+	_, _ = fmt.Fprintln(os.Stderr)
 	if err != nil {
-		zeroBytes(passphrase)
-		return fmt.Errorf("unsealing vault: %w", err)
+		zeroBytes(secretsPass)
+		return fmt.Errorf("reading users passphrase: %w", err)
 	}
-	s.Load(state)
+
+	secState, err := secretsVault.Unseal(secretsPass)
+	if err != nil {
+		zeroBytes(secretsPass)
+		zeroBytes(usersPass)
+		return fmt.Errorf("unsealing secrets vault: %w", err)
+	}
+	secStore.Load(secState)
+
+	usersState, err := usersVault.Unseal(usersPass)
+	if err != nil {
+		zeroBytes(secretsPass)
+		zeroBytes(usersPass)
+		secStore.Zero()
+		return fmt.Errorf("unsealing users vault: %w", err)
+	}
+	userStore.Load(usersState)
+
 	auditLog.Log(audit.Entry{Event: audit.EventVaultUnseal})
-	slog.Info("vault unsealed")
+	slog.Info("vaults unsealed")
 
-	if genRoot {
-		secret, err := s.AddToken("root", "ephemeral root token", vault.EphemeralExpiry(), nil, nil, nil, false)
-		if err != nil {
-			zeroBytes(passphrase)
-			return fmt.Errorf("generating root token: %w", err)
-		}
-		_, _ = fmt.Fprintf(os.Stderr, "root-token: %s\n", secret) //TODO log error
+	socketsConfig, err := config.LoadSockets(c.SocketsConfig)
+	if err != nil {
+		zeroBytes(secretsPass)
+		zeroBytes(usersPass)
+		return fmt.Errorf("loading sockets config: %w", err)
 	}
-	srv := socket.NewServer(c.RootSocket, s, v, auditLog, passphrase)
-	passphrase = nil
+
+	srv := socket.NewServer(
+		c.SocketsConfig,
+		socketsConfig,
+		secStore, userStore,
+		secretsVault, usersVault,
+		auditLog,
+		secretsPass, usersPass,
+	)
+	secretsPass = nil
+	usersPass = nil
 
 	if err := srv.Start(); err != nil {
 		return fmt.Errorf("starting socket server: %w", err)
 	}
+
+	if genRoot {
+		if err := startGenRoot(srv, userStore, c); err != nil {
+			srv.Stop()
+			return err
+		}
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -101,10 +140,41 @@ func runServe(cmd *cobra.Command, args []string) error {
 	case <-srv.SealRequested():
 		slog.Warn("seal triggered via socket — shutting down")
 	}
+
 	srv.Stop()
 	auditLog.Log(audit.Entry{Event: audit.EventVaultSeal})
-	s.Zero()
-	slog.Info("vault sealed — goodbye")
+	secStore.Zero()
+	userStore.Zero()
+	slog.Info("vaults sealed — goodbye")
+	return nil
+}
 
+// startGenRoot creates a temporary unrestricted socket and an ephemeral token
+// on the root user, printing both to stderr for the operator.
+func startGenRoot(srv *socket.Server, userStore *store.UserStore, c config.CordovaConfig) error {
+	rawID := make([]byte, 4)
+	if _, err := rand.Read(rawID); err != nil {
+		return fmt.Errorf("generating gen-root socket id: %w", err)
+	}
+	socketDir := dirOf(c.Audit.LogPath)
+	socketPath := socketDir + "/root-" + hex.EncodeToString(rawID) + ".sock"
+
+	const tokenName = "gen-root"
+	secret, err := userStore.AddToken("root", tokenName, "ephemeral root token", vault.EphemeralExpiry())
+	if err != nil {
+		return fmt.Errorf("generating ephemeral root token: %w", err)
+	}
+
+	entry := config.SocketEntry{
+		Name:  "gen-root",
+		Path:  socketPath,
+		Scope: config.SocketScope{Unrestricted: true},
+	}
+	if err := srv.AddEphemeralSocket(entry, "root", tokenName); err != nil {
+		return fmt.Errorf("starting gen-root socket: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "root-socket: %s\n", socketPath)
+	_, _ = fmt.Fprintf(os.Stderr, "root-token:  %s\n", secret)
 	return nil
 }
