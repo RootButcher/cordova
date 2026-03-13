@@ -1,5 +1,9 @@
 # TODO
 
+## HTTP
+
+- [ ] HTTP server should have a config.yaml. It should also be able to restrict CIDR ranges it accepts from. It should label all requests with an originating IP so that auth can validate if it's within that users allowed CIDR range.
+
 ## TUI
 
 - [ ] Socket config scope screen: "add namespace" and "add key" action rows are not highlighted when selected (`admin/tui/`)
@@ -36,18 +40,18 @@
 
 Overall: **7 / 186 functions tested (~4%)**
 
-| Package | Functions | Tested | % |
-|---|---|---|---|
-| `http/server` | 12 | 7 | 58% |
-| `core/internal/vault` | 20 | 0 | 0% |
-| `core/internal/auth` | 4 | 0 | 0% |
-| `core/internal/store` | 24 | 0 | 0% |
-| `core/internal/socket` | 32 | 0 | 0% |
-| `core/internal/config` | 6 | 0 | 0% |
-| `core/internal/audit` | 3 | 0 | 0% |
-| `core/client` | 4 | 0 | 0% |
-| `admin/tui` | 44 | 0 | 0% |
-| `admin/cli` | 2 | 0 | 0% |
+| Package                | Functions | Tested | %   |
+|------------------------|-----------|--------|-----|
+| `http/server`          | 12        | 7      | 58% |
+| `core/internal/vault`  | 20        | 0      | 0%  |
+| `core/internal/auth`   | 4         | 0      | 0%  |
+| `core/internal/store`  | 24        | 0      | 0%  |
+| `core/internal/socket` | 32        | 0      | 0%  |
+| `core/internal/config` | 6         | 0      | 0%  |
+| `core/internal/audit`  | 3         | 0      | 0%  |
+| `core/client`          | 4         | 0      | 0%  |
+| `admin/tui`            | 44        | 0      | 0%  |
+| `admin/cli`            | 2         | 0      | 0%  |
 
 ### `http/server` — 58% (7/12)
 

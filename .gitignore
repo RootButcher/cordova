@@ -40,3 +40,4 @@ go.work.sum
 /core/go.sum
 /admin/go.sum
 !/go.work
+/http/go.sum
