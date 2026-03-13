@@ -71,9 +71,6 @@ Auth owns the full decision: token lookup, expiry cleanup (revoke + persist), ro
 audit logging. The socket layer only reads the result — it never inspects tokens or makes
 policy decisions itself.
 
----
-
-## Token model
 
 ---
 
