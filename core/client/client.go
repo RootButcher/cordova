@@ -1,4 +1,4 @@
-// cordova/admin/client/client.go
+// cordova/core/client/client.go
 
 package client
 

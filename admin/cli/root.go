@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"cordova/admin/client"
+	"cordova/core/client"
 	"github.com/spf13/cobra"
 )
 

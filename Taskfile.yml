@@ -31,9 +31,18 @@ tasks:
     generates:
       - "{{.BUILD_DIR}}/{{.ADMIN_BIN}}"
 
+  build:http:
+    desc: Build cordova-http for local macOS
+    cmds:
+      - go build -o {{.BUILD_DIR}}/cordova-http ./http/cmd/cordova-http/
+    sources:
+      - ./**/*.go
+    generates:
+      - "{{.BUILD_DIR}}/cordova-http"
+
   build:all:
-    desc: Build both binaries for local macOS
-    deps: [ build, build:admin ]
+    desc: Build all binaries for local macOS
+    deps: [ build, build:admin, build:http ]
 
   run:
     desc: Run cordova-vault daemon locally
@@ -43,13 +52,14 @@ tasks:
   test:
     desc: Run all tests
     cmds:
-      - go test ./core/... ./admin/...
+      - go test ./core/... ./admin/... ./http/...
 
   tidy:
     desc: Tidy go modules
     cmds:
       - cd core && go mod tidy
       - cd admin && go mod tidy
+      - cd http && go mod tidy
 
   # ─── Pi ───────────────────────────────────────────────────────────────────
 
@@ -83,9 +93,24 @@ tasks:
     generates:
       - "{{.BUILD_DIR}}/{{.ADMIN_BIN}}-pi"
 
+  build:http:pi:
+    desc: Cross-compile cordova-http for Raspberry Pi (arm64)
+    env:
+      GOOS: linux
+      GOARCH: arm64
+      CGO_ENABLED: "0"
+      HOME: "{{.HOME}}"
+      GOCACHE: "{{.HOME}}/Library/Caches/go-build"
+    cmds:
+      - go build -o {{.BUILD_DIR}}/cordova-http-pi ./http/cmd/cordova-http/
+    sources:
+      - ./**/*.go
+    generates:
+      - "{{.BUILD_DIR}}/cordova-http-pi"
+
   build:pi:all:
-    desc: Cross-compile both binaries for Raspberry Pi
-    deps: [ build:pi, build:admin:pi ]
+    desc: Cross-compile all binaries for Raspberry Pi
+    deps: [ build:pi, build:admin:pi, build:http:pi ]
 
   deploy:pi:
     desc: Cross-compile and deploy both binaries to Pi via SCP

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"cordova/admin/client"
+	"cordova/core/client"
 	"cordova/core/ipc"
 	"cordova/core/validate"
 	"github.com/charmbracelet/bubbles/textinput"
